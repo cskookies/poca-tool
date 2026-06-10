@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Poca Stock Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: #FDF6F0; min-height: 100vh; padding: 2rem 1rem; }
+  .app { width: 100%; max-width: 680px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 2rem; }
+  .logo { width: 56px; height: 56px; background: #1a1a1a; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+  .logo svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  h1 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+  .subtitle { font-size: 14px; color: #888; margin-top: 4px; }
+  .upload-zone { border: 2px dashed #ddd; border-radius: 16px; padding: 2.5rem 1rem; text-align: center; cursor: pointer; background: #fff; transition: all 0.2s; margin-bottom: 1.5rem; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: #1a1a1a; background: #f9f9f9; }
+  .upload-zone svg { width: 36px; height: 36px; stroke: #bbb; margin-bottom: 12px; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .upload-zone p { font-size: 15px; color: #555; }
+  .upload-zone span { font-size: 13px; color: #aaa; }
+  input[type=file] { display: none; }
+  .queue { margin-bottom: 1.5rem; }
+  .queue-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .queue-title { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+  .queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .queue-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1.5px solid #eee; }
+  .queue-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .queue-thumb .remove { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .queue-thumb .status-dot { position: absolute; bottom: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; }
+  .status-dot.pending { background: #ddd; }
+  .status-dot.processing { background: #f0a500; animation: pulse 1s infinite; }
+  .status-dot.done { background: #4caf50; }
+  .status-dot.error { background: #f44336; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .start-btn { width: 100%; padding: 13px; background: #1a1a1a; color: #fff; border: none; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+  .start-btn:hover { background: #333; }
+  .start-btn:disabled { background: #ddd; color: #aaa; cursor: default; }
+  .progress-bar-wrap { background: #eee; border-radius: 99px; height: 6px; margin: 12px 0; overflow: hidden; }
+  .progress-bar { height: 100%; background: #1a1a1a; border-radius: 99px; transition: width 0.3s; }
+  .results { display: flex; flex-direction: column; gap: 12px; }
+  .result-card { background: #fff; border-radius: 16px; border: 1.5px solid #eee; overflow: hidden; }
+  .result-card.confirmed { border-color: #c8e6c9; }
+  .result-card.duplicate { border-color: #ffe0b2; }
+  .result-card.skipped .result-top { opacity: 0.5; }
+  .result-card.skipped .result-bottom { opacity: 0.5; }
+  .result-card.skipped .alts { opacity: 0.5; }
+  .skip-prompt { padding: 10px 12px; border-top: 1px solid #f5f5f5; display: flex; align-items: center; gap: 8px; }
+  .result-top { display: flex; }
+  .scan-thumb { width: 90px; height: 90px; object-fit: cover; flex-shrink: 0; }
+  .result-info { flex: 1; padding: 12px; min-width: 0; }
+  .result-filename { font-size: 11px; color: #aaa; margin-bottom: 4px; }
+  .result-match { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.3; margin-bottom: 2px; }
+  .result-stock { font-size: 12px; color: #888; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 4px; }
+  .badge.high { background: #e8f5e9; color: #2e7d32; }
+  .badge.medium { background: #fff3e0; color: #e65100; }
+  .badge.low { background: #ffebee; color: #c62828; }
+  .badge.nomatch { background: #f5f5f5; color: #999; }
+  .badge.duplicate { background: #fff3e0; color: #e65100; }
+  .result-bottom { padding: 10px 12px; border-top: 1px solid #f5f5f5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stock-input { width: 64px; text-align: center; font-size: 14px; font-family: 'DM Sans', sans-serif; padding: 6px 8px; border: 1.5px solid #ddd; border-radius: 8px; outline: none; }
+  .stock-input:focus { border-color: #1a1a1a; }
+  .skip-btn { padding: 7px 10px; background: #f5f5f5; color: #888; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+  .refine-btn { padding: 7px 12px; background: #e8f0fe; color: #1a73e8; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; font-weight: 500; }
+  .refine-panel { padding: 12px; background: #f8f9ff; border-top: 1px solid #e8f0fe; display: none; }
+  .refine-panel.open { display: block; }
+  .refine-panel label { font-size: 12px; color: #555; display: block; margin-bottom: 4px; font-weight: 500; }
+  .refine-panel select { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; margin-bottom: 10px; background: #fff; }
+  .refine-search-btn { width: 100%; padding: 9px; background: #1a73e8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
+  .new-product-btn { padding: 7px 12px; background: #f0e6ff; color: #7c3aed; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; font-weight: 500; }
+  .new-product-panel { padding: 12px; background: #faf5ff; border-top: 1px solid #e9d5ff; display: none; }
+  .new-product-panel.open { display: block; }
+  .new-product-panel label { font-size: 12px; color: #555; display: block; margin-bottom: 4px; font-weight: 500; }
+  .new-product-panel input { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; margin-bottom: 10px; }
+  .new-product-panel input:focus { border-color: #7c3aed; outline: none; }
+  .create-btn { width: 100%; padding: 9px; background: #7c3aed; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
+  .success-new { font-size: 13px; color: #2e7d32; background: #e8f5e9; padding: 8px 12px; border-radius: 8px; margin-top: 8px; }
+  .alts { padding: 0 12px 10px; }
+  .alts-label { font-size: 11px; color: #bbb; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .alt-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid #f8f8f8; cursor: pointer; border-radius: 6px; }
+  .alt-row:hover { background: #fafafa; }
+  .alt-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
+  .alt-name { font-size: 12px; color: #555; flex: 1; }
+  .alt-stock { font-size: 11px; color: #bbb; }
+  .save-all-btn { width: 100%; padding: 14px; background: #2e7d32; color: #fff; border: none; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; margin-top: 1rem; transition: background 0.15s; }
+  .save-all-btn:hover { background: #1b5e20; }
+  .save-all-btn:disabled { background: #ddd; color: #aaa; cursor: default; }
+  .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 500; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+  .processing-label { font-size: 13px; color: #888; text-align: center; margin: 8px 0; }
+  .match-img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; flex-shrink: 0; }
+  .crop-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+  .crop-modal { background: #fff; border-radius: 20px; padding: 1.5rem; width: 100%; max-width: 420px; }
+  .crop-modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .crop-modal p { font-size: 13px; color: #888; margin-bottom: 1rem; }
+  .crop-container { position: relative; width: 100%; aspect-ratio: 661/1051; border-radius: 8.03% / 5.05%; overflow: hidden; background: #f5f5f5; cursor: grab; touch-action: none; }
+  .crop-container:active { cursor: grabbing; }
+  .crop-container img { position: absolute; transform-origin: center center; pointer-events: none; user-select: none; }
+  .crop-controls { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+  .crop-controls label { font-size: 12px; color: #888; white-space: nowrap; }
+  .crop-controls input[type=range] { flex: 1; }
+  .crop-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .crop-confirm-btn { flex: 1; padding: 10px; background: #7c3aed; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
+  .crop-cancel-btn { padding: 10px 16px; background: #f5f5f5; color: #555; border: none; border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+    </div>
+    <h1>Poca Stock Tool</h1>
+    <p class="subtitle">Scan your photocards → AI matches → update stock in bulk</p>
+  </div>
+  <div class="upload-zone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <p>Select your scanned photocards</p>
+    <span>Multiple files at once supported</span>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+  <div id="queueSection" style="display:none">
+    <div class="queue">
+      <div class="queue-header"><span class="queue-title" id="queueTitle">0 photos selected</span></div>
+      <div class="queue-grid" id="queueGrid"></div>
+    </div>
+    <button class="start-btn" id="startBtn" onclick="startBatch()">Start matching</button>
+    <div id="progressSection" style="display:none">
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+      <p class="processing-label" id="progressLabel"></p>
+    </div>
+  </div>
+  <div class="results" id="results"></div>
+  <button class="save-all-btn" id="saveAllBtn" style="display:none" onclick="saveAll()">Save all to Shopify</button>
+  <button class="save-all-btn" id="csvBtn" style="display:none;background:#1565c0;margin-top:8px" onclick="downloadBarcodeCSV()">📄 Download barcodes CSV</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const PROXY = 'https://poca-proxy.onrender.com';
+let files = [], matchResults = [], allMembers = [];
+
+// Sessie tracker — alleen verhoogd na succesvol aanmaken product
+const sessionNextNum = {};
+
+fetch(PROXY + '/filters').then(r => r.json()).then(data => {
+  allMembers = data.members || [];
+}).catch(() => {});
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); addFiles(Array.from(e.dataTransfer.files)); });
+fileInput.addEventListener('change', () => { addFiles(Array.from(fileInput.files)); fileInput.value = ''; });
+
+function addFiles(newFiles) {
+  newFiles.forEach(f => { if (f.type.startsWith('image/')) files.push(f); });
+  renderQueue();
+}
+
+function renderQueue() {
+  const section = document.getElementById('queueSection');
+  const grid = document.getElementById('queueGrid');
+  const title = document.getElementById('queueTitle');
+  if (!files.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  title.textContent = files.length + " photo" + (files.length !== 1 ? 's' : '') + " selected";
+  grid.innerHTML = '';
+  files.forEach((f, i) => {
+    const url = URL.createObjectURL(f);
+    const div = document.createElement('div');
+    div.className = 'queue-thumb';
+    div.id = 'thumb-' + i;
+    div.innerHTML = '<img src="' + url + '" alt=""><button class="remove" onclick="removeFile(' + i + ')">×</button><span class="status-dot pending" id="dot-' + i + '"></span>';
+    grid.appendChild(div);
+  });
+}
+
+function removeFile(i) { files.splice(i, 1); renderQueue(); }
+
+function toBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function searchClip(base64, mediaType, filterMember) {
+  const resp = await fetch(PROXY + '/search-clip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_base64: base64, media_type: mediaType, filter_member: filterMember || null, filter_album: null })
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data.matches || [];
+}
+
+async function startBatch() {
+  if (!files.length) return;
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  document.getElementById('progressSection').style.display = 'block';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('saveAllBtn').style.display = 'none';
+  matchResults = [];
+
+  for (let i = 0; i < files.length; i++) {
+    setDot(i, 'processing');
+    updateProgress(i, files.length);
+    try {
+      const b64 = await toBase64(files[i]);
+      const url = URL.createObjectURL(files[i]);
+      const matches = await searchClip(b64, files[i].type, null);
+      const best = matches[0] || null;
+      matchResults.push({
+        index: i, filename: files[i].name, base64: b64, mediaType: files[i].type,
+        best, alternatives: matches.slice(1, 4), url,
+        skipped: !best, showingNewProduct: false,
+        newStock: best ? best.stock : 0,
+        selectedInventoryItemId: best ? best.inventory_item_id : null
+      });
+      setDot(i, best ? 'done' : 'error');
+    } catch(e) {
+      const url = URL.createObjectURL(files[i]);
+      matchResults.push({
+        index: i, filename: files[i].name, base64: null, mediaType: files[i].type,
+        best: null, alternatives: [], url, skipped: true, showingNewProduct: false,
+        newStock: 0, selectedInventoryItemId: null, error: e.message
+      });
+      setDot(i, 'error');
+    }
+    renderResults();
+  }
+
+  updateProgress(files.length, files.length);
+  document.getElementById('progressLabel').textContent = 'Done!';
+  document.getElementById('saveAllBtn').style.display = 'block';
+  btn.disabled = false;
+  btn.textContent = 'Re-match';
+}
+
+function setDot(i, status) {
+  const dot = document.getElementById('dot-' + i);
+  if (dot) dot.className = 'status-dot ' + status;
+}
+
+function updateProgress(done, total) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = done + ' of ' + total + ' processed...';
+}
+
+function isDuplicate(ri) {
+  const r = matchResults[ri];
+  if (!r.selectedInventoryItemId) return false;
+  return matchResults.some((other, i) => i !== ri && other.selectedInventoryItemId === r.selectedInventoryItemId);
+}
+
+function similarityLabel(sim) { return sim >= 0.7 ? 'high' : sim >= 0.5 ? 'medium' : 'low'; }
+function similarityText(sim) { return sim >= 0.7 ? 'High confidence' : sim >= 0.5 ? 'Medium confidence' : 'Low confidence'; }
+
+function renderResults() {
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+  matchResults.forEach((r, ri) => {
+    const card = document.createElement('div');
+    const sim = r.best ? r.best.similarity : 0;
+    const isSkipped = r.skipped && !r.showingNewProduct;
+    const dup = isDuplicate(ri);
+    card.className = 'result-card' + (r.best && !r.skipped ? ' confirmed' : '') + (isSkipped ? ' skipped' : '') + (dup ? ' duplicate' : '');
+    card.id = 'card-' + ri;
+
+    const memberOptions = '<option value="">All members</option>' + allMembers.map(m => '<option value="' + m + '">' + m + '</option>').join('');
+
+    const refinePanel = '<div class="refine-panel" id="refine-' + ri + '">' +
+      '<label>Member</label><select id="refine-member-' + ri + '">' + memberOptions + '</select>' +
+      '<button class="refine-search-btn" onclick="doRefine(' + ri + ')">Search again</button></div>';
+
+    const newProductPanel = '<div class="new-product-panel' + (r.showingNewProduct ? ' open' : '') + '" id="new-product-' + ri + '">' +
+      '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM">' +
+      '<label>Artist</label><input type="text" id="new-artist-' + ri + '" placeholder="e.g. ATEEZ">' +
+      '<label>Member</label><input type="text" id="new-member-' + ri + '" placeholder="e.g. HONGJOONG" oninput="fetchLocation(' + ri + ')">' +
+      '<label>Location</label><input type="text" id="new-location-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
+      '<label>Handle</label><input type="text" id="new-handle-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
+      '<label>Price (EUR)</label><input type="number" id="new-price-' + ri + '" placeholder="3.00" step="0.01" min="0" value="3.00">' +
+      '<label>Stock</label><input type="number" id="new-stock-' + ri + '" placeholder="1" min="0" value="1">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+      '<input type="checkbox" id="new-draft-' + ri + '" checked>' +
+      '<label style="margin:0;font-size:13px;color:#555">Als draft opslaan</label></div>' +
+      '<button class="create-btn" onclick="createProduct(' + ri + ')">Create product in Shopify</button>' +
+      '<div id="new-product-msg-' + ri + '"></div></div>';
+
+    const altsHtml = r.alternatives && r.alternatives.length ? (
+      '<div class="alts"><p class="alts-label">Other possible matches</p>' +
+      r.alternatives.map(a =>
+        '<div class="alt-row" onclick="selectAlt(' + ri + ',' + a.inventory_item_id + ',\'' + a.title.replace(/'/g,"\\'") + '\',' + a.stock + ',\'' + (a.image_url || r.url) + '\')">' +
+        '<img class="alt-thumb" src="' + (a.image_url || r.url) + '" onerror="this.style.display=\'none\'" alt="">' +
+        '<span class="alt-name">' + a.title + '</span>' +
+        '<span class="alt-stock">' + Math.round((a.similarity || 0) * 100) + '% · ' + a.stock + ' pcs.</span></div>'
+      ).join('') + '</div>'
+    ) : '';
+
+    const dupBadge = dup ? ' <span class="badge duplicate">⚠️ Duplicate</span>' : '';
+
+    if (!r.best) {
+      card.innerHTML =
+        '<div class="result-top"><img class="scan-thumb" id="scan-img-' + ri + '" src="' + r.url + '" alt="">' +
+        '<div class="result-info"><p class="result-filename">' + r.filename + '</p>' +
+        '<p class="result-match" style="color:#aaa">No match found</p>' +
+        '<span class="badge nomatch">No match</span>' + dupBadge + '</div></div>' +
+        '<div class="result-bottom"><span style="font-size:12px;color:#aaa;flex:1">' + (r.error || '') + '</span>' +
+        '<button class="new-product-btn" onclick="toggleNewProduct(' + ri + ')">+ New product</button>' +
+        '<button class="refine-btn" onclick="toggleRefine(' + ri + ')">Refine</button>' +
+        '<button class="skip-btn" onclick="toggleSkip(' + ri + ')">Skip</button></div>' +
+        newProductPanel + refinePanel + altsHtml;
+    } else {
+      const skipPrompt = r.skipped ? (
+        '<div class="skip-prompt"><span style="font-size:12px;color:#aaa;flex:1">Create new product?</span>' +
+        '<button class="new-product-btn" onclick="toggleNewProduct(' + ri + ')">+ New product</button></div>'
+      ) : '';
+      card.innerHTML =
+        '<div class="result-top"><img class="scan-thumb" id="scan-img-' + ri + '" src="' + r.url + '" alt="">' +
+        '<div class="result-info"><p class="result-filename">' + r.filename + '</p>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">' +
+        '<img class="match-img" src="' + (r.best.image_url || r.url) + '" onerror="this.style.display=\'none\'" alt="">' +
+        '<p class="result-match" id="match-title-' + ri + '">' + r.best.title + '</p></div>' +
+        '<p class="result-stock" id="match-stock-' + ri + '">Current stock: <strong>' + r.best.stock + '</strong></p>' +
+        '<span class="badge ' + similarityLabel(sim) + '">' + similarityText(sim) + ' · ' + Math.round(sim * 100) + '%</span>' + dupBadge +
+        '</div></div>' +
+        '<div class="result-bottom">' +
+        '<input type="number" class="stock-input" id="stock-' + ri + '" value="' + r.newStock + '" min="0" onchange="updateNewStock(' + ri + ', this.value)">' +
+        '<button class="refine-btn" onclick="toggleRefine(' + ri + ')">Refine</button>' +
+        '<button class="skip-btn" onclick="toggleSkip(' + ri + ')">' + (r.skipped ? 'Restore' : 'Skip') + '</button></div>' +
+        skipPrompt + newProductPanel + refinePanel + altsHtml;
+    }
+    container.appendChild(card);
+  });
+}
+
+// ── Crop modal ──────────────────────────────────────────────
+const CARD_W = 661, CARD_H = 1051;
+let cropState = { ri: null, scale: 1, offsetX: 0, offsetY: 0, dragging: false, lastX: 0, lastY: 0 };
+
+function adjustZoom(delta) {
+  const slider = document.getElementById('cropZoom');
+  slider.value = Math.min(parseInt(slider.max), Math.max(parseInt(slider.min), parseInt(slider.value) + delta));
+  updateCrop();
+}
+
+function openCropModal(ri) {
+  const r = matchResults[ri];
+  cropState.ri = ri;
+  cropState.offsetX = 0;
+  cropState.offsetY = 0;
+  const img = document.getElementById('cropImg');
+  img.src = r.url;
+  img.onload = () => {
+    const container = document.getElementById('cropContainer');
+    const cw = container.clientWidth, ch = container.clientHeight;
+    const minScale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
+    const minPct = Math.round(minScale * 100);
+    document.getElementById('cropZoom').min = minPct;
+    document.getElementById('cropZoom').value = minPct;
+    cropState.scale = minScale;
+    cropState.offsetX = 0; cropState.offsetY = 0;
+    updateCrop();
+  };
+  document.getElementById('cropModal').style.display = 'flex';
+  setupCropDrag();
+}
+
+function closeCropModal() { document.getElementById('cropModal').style.display = 'none'; }
+
+function updateCrop() {
+  const zoom = parseInt(document.getElementById('cropZoom').value);
+  cropState.scale = zoom / 100;
+  const img = document.getElementById('cropImg');
+  const container = document.getElementById('cropContainer');
+  const cw = container.clientWidth, ch = container.clientHeight;
+  const iw = img.naturalWidth * cropState.scale;
+  const ih = img.naturalHeight * cropState.scale;
+  const maxX = Math.max(0, (iw - cw) / 2);
+  const maxY = Math.max(0, (ih - ch) / 2);
+  cropState.offsetX = Math.max(-maxX, Math.min(maxX, cropState.offsetX));
+  cropState.offsetY = Math.max(-maxY, Math.min(maxY, cropState.offsetY));
+  img.style.width = iw + 'px'; img.style.height = ih + 'px';
+  img.style.left = ((cw - iw) / 2 + cropState.offsetX) + 'px';
+  img.style.top = ((ch - ih) / 2 + cropState.offsetY) + 'px';
+}
+
+function setupCropDrag() {
+  const container = document.getElementById('cropContainer');
+  container.onmousedown = (e) => { cropState.dragging = true; cropState.lastX = e.clientX; cropState.lastY = e.clientY; };
+  document.onmousemove = (e) => {
+    if (!cropState.dragging) return;
+    cropState.offsetX += e.clientX - cropState.lastX; cropState.offsetY += e.clientY - cropState.lastY;
+    cropState.lastX = e.clientX; cropState.lastY = e.clientY; updateCrop();
+  };
+  document.onmouseup = () => { cropState.dragging = false; };
+  container.ontouchstart = (e) => { cropState.dragging = true; cropState.lastX = e.touches[0].clientX; cropState.lastY = e.touches[0].clientY; };
+  container.ontouchmove = (e) => {
+    if (!cropState.dragging) return; e.preventDefault();
+    cropState.offsetX += e.touches[0].clientX - cropState.lastX; cropState.offsetY += e.touches[0].clientY - cropState.lastY;
+    cropState.lastX = e.touches[0].clientX; cropState.lastY = e.touches[0].clientY; updateCrop();
+  };
+  container.ontouchend = () => { cropState.dragging = false; };
+}
+
+async function confirmCrop() {
+  const ri = cropState.ri;
+  const r = matchResults[ri];
+  const container = document.getElementById('cropContainer');
+  const img = document.getElementById('cropImg');
+  const cw = container.clientWidth, ch = container.clientHeight;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_W; canvas.height = CARD_H;
+  const ctx = canvas.getContext('2d');
+  const radius = 53;
+  ctx.beginPath();
+  ctx.moveTo(radius, 0); ctx.lineTo(CARD_W - radius, 0);
+  ctx.quadraticCurveTo(CARD_W, 0, CARD_W, radius);
+  ctx.lineTo(CARD_W, CARD_H - radius);
+  ctx.quadraticCurveTo(CARD_W, CARD_H, CARD_W - radius, CARD_H);
+  ctx.lineTo(radius, CARD_H);
+  ctx.quadraticCurveTo(0, CARD_H, 0, CARD_H - radius);
+  ctx.lineTo(0, radius);
+  ctx.quadraticCurveTo(0, 0, radius, 0);
+  ctx.closePath(); ctx.clip();
+
+  const displayScale = cw / CARD_W;
+  const imgW = img.naturalWidth * cropState.scale;
+  const imgH = img.naturalHeight * cropState.scale;
+  const imgX = (cw - imgW) / 2 + cropState.offsetX;
+  const imgY = (ch - imgH) / 2 + cropState.offsetY;
+  ctx.drawImage(img, imgX / displayScale, imgY / displayScale, imgW / displayScale, imgH / displayScale);
+
+  const dataUrl = canvas.toDataURL('image/png');
+  r.base64 = dataUrl.split(',')[1];
+  r.mediaType = 'image/png';
+  r.url = dataUrl;
+  r.cropped = true;
+  const scanImg = document.getElementById('scan-img-' + ri);
+  if (scanImg) scanImg.src = dataUrl;
+
+  closeCropModal();
+
+  // Open new product panel + auto-fill
+  const panel = document.getElementById('new-product-' + ri);
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+
+    // Auto-detect member
+    const memberField = document.getElementById('new-member-' + ri);
+    const detectedMember = detectMemberFromMatches(ri);
+    if (detectedMember && memberField && !memberField.value) {
+      memberField.value = detectedMember;
+      fetchLocation(ri);
+    }
+
+    // Auto-detect artist
+    const artistField = document.getElementById('new-artist-' + ri);
+    if (artistField && !artistField.value) {
+      const allMatches = [r.best, ...(r.alternatives || [])].filter(Boolean);
+      const artists = allMatches.map(m => m.artist).filter(Boolean);
+      if (artists.length > 0) {
+        const counts = {};
+        artists.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
+        artistField.value = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+      }
+    }
+  }
+}
+
+window.toggleNewProduct = function(ri) {
+  const panel = document.getElementById('new-product-' + ri);
+  if (!panel) return;
+  if (!panel.classList.contains('open')) {
+    openCropModal(ri);
+    return;
+  }
+  panel.classList.toggle('open');
+};
+
+// ── Watermark ───────────────────────────────────────────────
+const WATERMARK_URL = PROXY + '/watermark.png';
+
+async function applyWatermark(base64, mediaType) {
+  return new Promise((resolve, reject) => {
+    const productImg = new Image();
+    const watermarkImg = new Image();
+    let loaded = 0;
+    function onLoad() {
+      loaded++;
+      if (loaded < 2) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = productImg.naturalWidth; canvas.height = productImg.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(productImg, 0, 0);
+      const wmAspect = watermarkImg.naturalWidth / watermarkImg.naturalHeight;
+      const wmW = canvas.width, wmH = wmW / wmAspect;
+      ctx.drawImage(watermarkImg, 0, canvas.height - wmH, wmW, wmH);
+      resolve(canvas.toDataURL('image/png').split(',')[1]);
+    }
+    productImg.crossOrigin = 'anonymous'; watermarkImg.crossOrigin = 'anonymous';
+    productImg.onload = onLoad; watermarkImg.onload = onLoad;
+    productImg.onerror = () => reject(new Error('Productafbeelding laden mislukt'));
+    watermarkImg.onerror = () => reject(new Error('Watermark laden mislukt'));
+    productImg.src = 'data:' + mediaType + ';base64,' + base64;
+    watermarkImg.src = WATERMARK_URL;
+  });
+}
+
+// ── Enhance ─────────────────────────────────────────────────
+window.enhanceCrop = async function() {
+  const ri = cropState.ri;
+  const btn = document.getElementById('cropEnhanceBtn');
+  const r = matchResults[ri];
+
+  if (r.enhanced) {
+    r.enhanced = false;
+    r.base64 = r.originalBase64; r.mediaType = r.originalMediaType;
+    document.getElementById('cropImg').src = r.originalUrl || r.url;
+    btn.textContent = '✨ Enhance'; return;
+  }
+  if (r.enhancedBase64) {
+    r.enhanced = true;
+    document.getElementById('cropImg').src = 'data:image/png;base64,' + r.enhancedBase64;
+    btn.textContent = '↩ Origineel'; return;
+  }
+
+  btn.textContent = '⏳ Bezig...'; btn.disabled = true;
+  try {
+    const resp = await fetch(PROXY + '/enhance', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: r.base64, media_type: r.mediaType })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    r.enhancedBase64 = data.enhanced_base64;
+    r.originalBase64 = r.base64; r.originalMediaType = r.mediaType; r.originalUrl = r.url;
+    r.enhanced = true; r.base64 = data.enhanced_base64; r.mediaType = 'image/png';
+    const newUrl = 'data:image/png;base64,' + data.enhanced_base64;
+    r.url = newUrl;
+    document.getElementById('cropImg').src = newUrl;
+    document.getElementById('cropImg').onload = () => {
+      const container = document.getElementById('cropContainer');
+      const img = document.getElementById('cropImg');
+      const minScale = Math.max(container.clientWidth / img.naturalWidth, container.clientHeight / img.naturalHeight);
+      const minPct = Math.round(minScale * 100);
+      document.getElementById('cropZoom').min = minPct;
+      document.getElementById('cropZoom').value = minPct;
+      cropState.scale = minScale; cropState.offsetX = 0; cropState.offsetY = 0; updateCrop();
+    };
+    btn.textContent = '↩ Origineel'; btn.disabled = false;
+  } catch(e) {
+    btn.textContent = '✨ Enhance'; btn.disabled = false;
+    alert('Enhancement mislukt: ' + e.message);
+  }
+};
+
+// ── fetchLocation — offset pas verhogen in createProduct ────
+window.fetchLocation = async function(ri) {
+  const member = document.getElementById('new-member-' + ri).value.trim();
+  const locationField = document.getElementById('new-location-' + ri);
+  const handleField = document.getElementById('new-handle-' + ri);
+  if (!member || member.length < 2) {
+    locationField.value = ''; locationField.placeholder = 'Wordt automatisch ingevuld...';
+    if (handleField) { handleField.value = ''; handleField.placeholder = 'Wordt automatisch ingevuld...'; }
+    return;
+  }
+  locationField.placeholder = 'Ophalen...'; locationField.value = '';
+  if (handleField) { handleField.placeholder = 'Ophalen...'; handleField.value = ''; }
+  try {
+    const resp = await fetch(PROXY + '/next-product-info', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ member })
+    });
+    const data = await resp.json();
+    if (data.location && data.prefix) {
+      const prefix = data.prefix;
+      const baseLocNum = parseInt(data.location.split('-')[1]);
+      // Initialiseer sessie teller als nog niet bestaat
+      if (sessionNextNum[prefix] === undefined) sessionNextNum[prefix] = baseLocNum;
+      locationField.value = prefix + '-' + String(sessionNextNum[prefix]).padStart(5, '0');
+
+      if (data.handle && handleField) {
+        const handleBase = data.handle.split('-').slice(0, -1).join('-');
+        const baseHandleNum = parseInt(data.handle.split('-').pop());
+        const hKey = 'h_' + handleBase;
+        if (sessionNextNum[hKey] === undefined) sessionNextNum[hKey] = baseHandleNum;
+        handleField.value = handleBase + '-' + sessionNextNum[hKey];
+      }
+    } else {
+      locationField.placeholder = 'Geen prefix gevonden voor ' + member;
+    }
+  } catch(e) {
+    locationField.placeholder = 'Fout bij ophalen';
+  }
+};
+
+function detectMemberFromMatches(ri) {
+  const r = matchResults[ri];
+  const allMatches = [];
+  if (r.best && r.best.member) allMatches.push(r.best.member);
+  if (r.alternatives) r.alternatives.forEach(a => { if (a.member) allMatches.push(a.member); });
+  if (!allMatches.length) return null;
+  const counts = {};
+  allMatches.forEach(m => { counts[m] = (counts[m] || 0) + 1; });
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return top[1] >= Math.ceil(allMatches.length / 2) ? top[0] : null;
+}
+
+window.createProduct = async function(ri) {
+  const title = document.getElementById('new-title-' + ri).value.trim();
+  const artist = document.getElementById('new-artist-' + ri).value.trim();
+  const member = document.getElementById('new-member-' + ri).value.trim();
+  const location = document.getElementById('new-location-' + ri).value.trim();
+  const handle = document.getElementById('new-handle-' + ri).value.trim();
+  const price = document.getElementById('new-price-' + ri).value;
+  const stock = parseInt(document.getElementById('new-stock-' + ri).value) || 0;
+  const isDraft = document.getElementById('new-draft-' + ri).checked;
+  const r = matchResults[ri];
+
+  if (!title) { alert('Please enter a product name'); return; }
+
+  const btn = document.querySelector('#new-product-' + ri + ' .create-btn');
+  btn.disabled = true; btn.textContent = 'Watermark toevoegen...';
+
+  try {
+    const watermarkedBase64 = await applyWatermark(r.base64, r.mediaType);
+    btn.textContent = 'Creating...';
+
+    const toTitleCase = str => str.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    const tagsArr = ['Photocards'];
+    if (artist) tagsArr.push(toTitleCase(artist));
+    if (member) tagsArr.push(toTitleCase(member));
+
+    const metafields = [];
+    if (artist) metafields.push({ namespace: 'custom', key: 'artist', value: artist, type: 'single_line_text_field' });
+    if (member) metafields.push({ namespace: 'custom', key: 'member', value: member, type: 'single_line_text_field' });
+    if (location) metafields.push({ namespace: 'custom', key: 'location', value: location, type: 'single_line_text_field' });
+
+    const productResp = await fetch(PROXY + '/shopify/products.json', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product: {
+          title, handle: handle || undefined,
+          status: isDraft ? 'draft' : 'active',
+          tags: tagsArr.join(', '),
+          variants: [{ price: price || '0.00', inventory_management: 'shopify', inventory_quantity: stock }],
+          images: [{ attachment: watermarkedBase64, filename: r.filename.replace(/\.[^.]+$/, '') + '_wm.png' }],
+          metafields
+        }
+      })
+    });
+
+    const productData = await productResp.json();
+    if (productData.errors) throw new Error(JSON.stringify(productData.errors));
+
+    // ✅ Verhoog sessie tellers NA succesvol aanmaken
+    if (location) {
+      const prefix = location.split('-')[0];
+      if (sessionNextNum[prefix] !== undefined) sessionNextNum[prefix]++;
+    }
+    if (handle) {
+      const hBase = handle.split('-').slice(0, -1).join('-');
+      const hKey = 'h_' + hBase;
+      if (sessionNextNum[hKey] !== undefined) sessionNextNum[hKey]++;
+    }
+
+    btn.textContent = 'Indexing...';
+    fetch(PROXY + '/index-single', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productData.product.id })
+    }).catch(e => console.warn('Index fout:', e.message));
+
+    // Bewaar product ID voor CSV export
+    r.createdProductId = productData.product.id;
+    document.getElementById('csvBtn').style.display = 'block';
+
+    document.getElementById('new-product-msg-' + ri).innerHTML =
+      '<p class="success-new">✓ Product created: ' + productData.product.title + '</p>';
+    btn.textContent = 'Created ✓';
+  } catch(e) {
+    document.getElementById('new-product-msg-' + ri).innerHTML =
+      '<p style="font-size:13px;color:#c62828">' + e.message + '</p>';
+    btn.disabled = false; btn.textContent = 'Create product in Shopify';
+  }
+};
+
+window.toggleRefine = function(ri) { document.getElementById('refine-' + ri).classList.toggle('open'); };
+
+window.doRefine = async function(ri) {
+  const member = document.getElementById('refine-member-' + ri).value;
+  const r = matchResults[ri];
+  if (!r.base64) return;
+  const btn = document.querySelector('#refine-' + ri + ' .refine-search-btn');
+  btn.textContent = 'Searching...'; btn.disabled = true;
+  try {
+    const matches = await searchClip(r.base64, r.mediaType, member || null);
+    const best = matches[0] || null;
+    matchResults[ri] = { ...matchResults[ri], best, alternatives: matches.slice(1, 4), skipped: !best, showingNewProduct: false, newStock: best ? best.stock : 0, selectedInventoryItemId: best ? best.inventory_item_id : null };
+    renderResults();
+  } catch(e) { btn.textContent = 'Error: ' + e.message; btn.disabled = false; }
+};
+
+window.updateNewStock = function(ri, val) { matchResults[ri].newStock = parseInt(val) || 0; };
+window.toggleSkip = function(ri) {
+  matchResults[ri].skipped = !matchResults[ri].skipped;
+  if (!matchResults[ri].skipped) matchResults[ri].showingNewProduct = false;
+  renderResults();
+};
+window.selectAlt = function(ri, inventoryItemId, title, stock, img) {
+  matchResults[ri].selectedInventoryItemId = inventoryItemId;
+  matchResults[ri].newStock = stock;
+  matchResults[ri].best = Object.assign({}, matchResults[ri].best || {}, { title, stock, image_url: img, inventory_item_id: inventoryItemId });
+  matchResults[ri].skipped = false;
+  renderResults();
+};
+
+// Bijgehouden producten voor CSV export
+let savedProductsForCSV = [];
+
+async function saveAll() {
+  const toSave = matchResults.filter(r => !r.skipped && r.selectedInventoryItemId);
+  if (!toSave.length) { showToast('Nothing to save'); return; }
+  const btn = document.getElementById('saveAllBtn');
+  btn.disabled = true; btn.textContent = '0 of ' + toSave.length + ' saved...';
+  savedProductsForCSV = [];
+  let saved = 0;
+  for (const r of toSave) {
+    try {
+      const locResp = await fetch(PROXY + '/shopify/inventory_levels.json?inventory_item_ids=' + r.selectedInventoryItemId);
+      const locData = await locResp.json();
+      const locationId = locData.inventory_levels?.[0]?.location_id;
+      if (!locationId) throw new Error('No location found');
+      await fetch(PROXY + '/shopify/inventory_levels/set.json', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location_id: locationId, inventory_item_id: r.selectedInventoryItemId, available: r.newStock })
+      });
+
+      // Haal product details op voor CSV
+      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
+      const productData = await productResp.json();
+      if (productData.product) {
+        savedProductsForCSV.push({ product: productData.product, newStock: r.newStock });
+      }
+
+      saved++; btn.textContent = saved + ' of ' + toSave.length + ' saved...';
+    } catch(e) { console.error(r.filename, e); }
+  }
+  showToast('✓ ' + saved + ' products updated in Shopify!');
+  btn.disabled = false; btn.textContent = 'Save all to Shopify';
+
+  // Toon CSV knop als er producten zijn opgeslagen
+  if (savedProductsForCSV.length > 0) {
+    document.getElementById('csvBtn').style.display = 'block';
+  }
+}
+
+async function downloadBarcodeCSV() {
+  // Voeg ook nieuwe producten toe die deze sessie zijn aangemaakt
+  const newProducts = matchResults.filter(r => r.createdProductId);
+  for (const r of newProducts) {
+    if (!savedProductsForCSV.find(p => p.product.id === r.createdProductId)) {
+      try {
+        const productResp = await fetch(PROXY + '/shopify/products/' + r.createdProductId + '.json');
+        const productData = await productResp.json();
+        if (productData.product) {
+          savedProductsForCSV.push({ product: productData.product, newStock: r.newStock });
+        }
+      } catch(e) {}
+    }
+  }
+
+  if (!savedProductsForCSV.length) { showToast('Geen producten om te exporteren'); return; }
+
+  // Shopify CSV formaat
+  const headers = ['Handle', 'Title', 'Variant SKU', 'Variant Barcode', 'Variant Inventory Qty', 'Variant Price', 'Tags', 'Image Src'];
+  const rows = savedProductsForCSV.map(({ product, newStock }) => {
+    const variant = product.variants?.[0] || {};
+    const image = product.images?.[0]?.src || '';
+    const tags = product.tags || '';
+    return [
+      product.handle,
+      product.title,
+      variant.sku || '',
+      variant.barcode || '',
+      newStock,
+      variant.price || '',
+      tags,
+      image
+    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  // Via proxy downloaden om antivirusmelding te voorkomen
+  const resp = await fetch(PROXY + '/download-csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv, filename: 'poca-barcodes-' + new Date().toISOString().slice(0, 10) + '.csv' })
+  });
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'poca-barcodes-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+
+<!-- Crop Modal -->
+<div class="crop-modal-overlay" id="cropModal" style="display:none">
+  <div class="crop-modal">
+    <h3>Bijsnijden</h3>
+    <p>Sleep om te positioneren, zoom in/uit met de slider</p>
+    <div class="crop-container" id="cropContainer">
+      <img id="cropImg" src="" alt="">
+    </div>
+    <div class="crop-controls">
+      <label>Zoom</label>
+      <button onclick="adjustZoom(-1)" style="background:#f5f5f5;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1">−</button>
+      <input type="range" id="cropZoom" min="100" max="300" value="100" step="1" oninput="updateCrop()">
+      <button onclick="adjustZoom(1)" style="background:#f5f5f5;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1">+</button>
+    </div>
+    <div class="crop-actions">
+      <button class="crop-cancel-btn" onclick="closeCropModal()">Annuleer</button>
+      <button class="crop-cancel-btn" id="cropEnhanceBtn" onclick="enhanceCrop()" style="background:#fff3e0;color:#e65100">✨ Enhance</button>
+      <button class="crop-confirm-btn" onclick="confirmCrop()">Bevestigen ✓</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
