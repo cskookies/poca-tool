@@ -737,6 +737,11 @@ async function saveAll() {
   let saved = 0;
   for (const r of toSave) {
     try {
+      // Haal product details op VOOR het updaten — voor delta berekening
+      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
+      const productData = await productResp.json();
+      const oldStock = productData.product?.variants?.[0]?.inventory_quantity || 0;
+
       const locResp = await fetch(PROXY + '/shopify/inventory_levels.json?inventory_item_ids=' + r.selectedInventoryItemId);
       const locData = await locResp.json();
       const locationId = locData.inventory_levels?.[0]?.location_id;
@@ -746,18 +751,16 @@ async function saveAll() {
         body: JSON.stringify({ location_id: locationId, inventory_item_id: r.selectedInventoryItemId, available: r.newStock })
       });
 
-      // Haal product details op voor CSV
-      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
-      const productData = await productResp.json();
       if (productData.product) {
-        savedProductsForCSV.push({ product: productData.product, newStock: r.newStock });
+        const delta = r.newStock - oldStock;
+        if (delta !== 0) savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta });
       }
 
       saved++; btn.textContent = saved + ' of ' + toSave.length + ' saved...';
     } catch(e) { console.error(r.filename, e); }
-  }
-  showToast('✓ ' + saved + ' products updated in Shopify!');
-  btn.disabled = false; btn.textContent = 'Save all to Shopify';
+  }  // 
+showToast('✓ ' + saved + ' products updated in Shopify!');
+btn.disabled = false; btn.textContent = 'Save all to Shopify'; 
 
   // Toon CSV knop als er producten zijn opgeslagen
   if (savedProductsForCSV.length > 0) {
@@ -774,7 +777,7 @@ async function downloadBarcodeCSV() {
         const productResp = await fetch(PROXY + '/shopify/products/' + r.createdProductId + '.json');
         const productData = await productResp.json();
         if (productData.product) {
-          savedProductsForCSV.push({ product: productData.product, newStock: r.newStock });
+          savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta: r.newStock });
         }
       } catch(e) {}
     }
@@ -782,39 +785,73 @@ async function downloadBarcodeCSV() {
 
   if (!savedProductsForCSV.length) { showToast('Geen producten om te exporteren'); return; }
 
-  // Shopify CSV formaat
-  const headers = ['Handle', 'Title', 'Variant SKU', 'Variant Barcode', 'Variant Inventory Qty', 'Variant Price', 'Tags', 'Image Src'];
-  const rows = savedProductsForCSV.map(({ product, newStock }) => {
+  // Shopify CSV formaat — exacte kolomvolgorde
+  const headers = [
+    'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags','Published',
+    'Option1 Name','Option1 Value','Variant SKU','Variant Grams','Variant Inventory Tracker',
+    'Variant Inventory Qty','Variant Inventory Policy','Variant Fulfillment Service',
+    'Variant Price','Variant Requires Shipping','Variant Taxable','Variant Barcode',
+    'Image Src','Image Position','Gift Card',
+    'Artist (product.metafields.custom.artist)',
+    'Location (product.metafields.custom.location)',
+    'Member (product.metafields.custom.member)',
+    'Variant Weight Unit','Status'
+  ];
+
+const rows = savedProductsForCSV.map(({ product, newStock, delta }) => {
     const variant = product.variants?.[0] || {};
     const image = product.images?.[0]?.src || '';
     const tags = product.tags || '';
+    const artist = product.metafields?.find?.(m => m.key === 'artist')?.value || '';
+    const location = product.metafields?.find?.(m => m.key === 'location')?.value || '';
+    const member = product.metafields?.find?.(m => m.key === 'member')?.value || '';
+
     return [
       product.handle,
       product.title,
-      variant.sku || '',
-      variant.barcode || '',
-      newStock,
-      variant.price || '',
+      '',
+      'Poca Cafe',
+      '',
+      '',
       tags,
-      image
+      'false',
+      'Title',
+      'Default Title',
+      variant.sku || '',
+      '0.0',
+      'shopify',
+      delta ?? newStock,
+      'deny',
+      'manual',
+      variant.price || '',
+      'true',
+      'true',
+      variant.barcode || '',
+      image,
+      '1',
+      'false',
+      artist,
+      location,
+      member,
+      'kg',
+      product.status || 'draft'
     ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
   });
 
   const csv = [headers.join(','), ...rows].join('\n');
 
-  // Via proxy downloaden om antivirusmelding te voorkomen
-  const resp = await fetch(PROXY + '/download-csv', {
+  // Stuur naar proxy en open als directe URL
+  const resp = await fetch(PROXY + '/store-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ csv, filename: 'poca-barcodes-' + new Date().toISOString().slice(0, 10) + '.csv' })
   });
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'poca-barcodes-' + new Date().toISOString().slice(0, 10) + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+  const data = await resp.json();
+  if (data.url) {
+    window.open(data.url, '_blank');
+  } else {
+    showToast('Fout bij genereren CSV');
+  }
 }
 
 function showToast(msg) {
