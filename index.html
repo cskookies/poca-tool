@@ -772,20 +772,24 @@ async function downloadBarcodeCSV() {
   // Voeg ook nieuwe producten toe die deze sessie zijn aangemaakt
   const newProducts = matchResults.filter(r => r.createdProductId);
   for (const r of newProducts) {
-    if (!savedProductsForCSV.find(p => p.product.id === r.createdProductId)) {
-      try {
-        const productResp = await fetch(PROXY + '/shopify/products/' + r.createdProductId + '.json');
-        const productData = await productResp.json();
-        if (productData.product) {
-          savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta: r.newStock });
-        }
-      } catch(e) {}
+    if (!savedProductsForCSV.find(p => p.shopify_product_id === r.createdProductId)) {
+      savedProductsForCSV.push({ shopify_product_id: r.createdProductId, delta: r.newStock });
     }
   }
 
   if (!savedProductsForCSV.length) { showToast('Geen producten om te exporteren'); return; }
 
-  // Shopify CSV formaat — exacte kolomvolgorde
+  // Haal info op uit Supabase via proxy
+  const ids = savedProductsForCSV.map(p => p.product?.id || p.shopify_product_id).filter(Boolean);
+  const infoResp = await fetch(PROXY + '/product-info-bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_ids: ids })
+  });
+  const infoData = await infoResp.json();
+  const productMap = {};
+  (infoData.products || []).forEach(p => { productMap[p.shopify_product_id] = p; });
+
   const headers = [
     'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags','Published',
     'Option1 Name','Option1 Value','Variant SKU','Variant Grams','Variant Inventory Tracker',
@@ -798,49 +802,42 @@ async function downloadBarcodeCSV() {
     'Variant Weight Unit','Status'
   ];
 
-const rows = savedProductsForCSV.map(({ product, newStock, delta }) => {
-    const variant = product.variants?.[0] || {};
-    const image = product.images?.[0]?.src || '';
-    const tags = product.tags || '';
-    const artist = product.metafields?.find?.(m => m.key === 'artist')?.value || '';
-    const location = product.metafields?.find?.(m => m.key === 'location')?.value || '';
-    const member = product.metafields?.find?.(m => m.key === 'member')?.value || '';
+  const rows = savedProductsForCSV.map(({ product, delta, newStock, shopify_product_id }) => {
+    const id = product?.id || shopify_product_id;
+    const info = productMap[id] || {};
+    const tags = product?.tags || '';
+    const image = product?.images?.[0]?.src || info.image_url || '';
+    const price = product?.variants?.[0]?.price || (info.price ? String(info.price / 100) : '');
+    const sku = product?.variants?.[0]?.sku || info.sku || '';
+    const barcode = product?.variants?.[0]?.barcode || info.barcode || '';
+    const status = product?.status || info.status || 'draft';
 
     return [
-      product.handle,
-      product.title,
+      info.handle || product?.handle || '',
+      info.title || product?.title || '',
       '',
       'Poca Cafe',
-      '',
-      '',
+      '', '',
       tags,
       'false',
-      'Title',
-      'Default Title',
-      variant.sku || '',
-      '0.0',
-      'shopify',
+      'Title', 'Default Title',
+      sku, '0.0', 'shopify',
       delta ?? newStock,
-      'deny',
-      'manual',
-      variant.price || '',
-      'true',
-      'true',
-      variant.barcode || '',
-      image,
-      '1',
-      'false',
-      artist,
-      location,
-      member,
+      'deny', 'manual',
+      price,
+      'true', 'true',
+      barcode,
+      image, '1', 'false',
+      info.artist || '',
+      info.location || '',
+      info.member || '',
       'kg',
-      product.status || 'draft'
-    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
+      status
+    ].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',');
   });
 
   const csv = [headers.join(','), ...rows].join('\n');
 
-  // Stuur naar proxy en open als directe URL
   const resp = await fetch(PROXY + '/store-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -853,7 +850,6 @@ const rows = savedProductsForCSV.map(({ product, newStock, delta }) => {
     showToast('Fout bij genereren CSV');
   }
 }
-
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
