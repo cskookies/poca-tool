@@ -1,888 +1,435 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Poca Stock Tool</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'DM Sans', sans-serif; background: #FDF6F0; min-height: 100vh; padding: 2rem 1rem; }
-  .app { width: 100%; max-width: 680px; margin: 0 auto; }
-  .header { text-align: center; margin-bottom: 2rem; }
-  .logo { width: 56px; height: 56px; background: #1a1a1a; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
-  .logo svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  h1 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
-  .subtitle { font-size: 14px; color: #888; margin-top: 4px; }
-  .upload-zone { border: 2px dashed #ddd; border-radius: 16px; padding: 2.5rem 1rem; text-align: center; cursor: pointer; background: #fff; transition: all 0.2s; margin-bottom: 1.5rem; }
-  .upload-zone:hover, .upload-zone.dragover { border-color: #1a1a1a; background: #f9f9f9; }
-  .upload-zone svg { width: 36px; height: 36px; stroke: #bbb; margin-bottom: 12px; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .upload-zone p { font-size: 15px; color: #555; }
-  .upload-zone span { font-size: 13px; color: #aaa; }
-  input[type=file] { display: none; }
-  .queue { margin-bottom: 1.5rem; }
-  .queue-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .queue-title { font-size: 14px; font-weight: 600; color: #1a1a1a; }
-  .queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; margin-bottom: 12px; }
-  .queue-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1.5px solid #eee; }
-  .queue-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .queue-thumb .remove { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .queue-thumb .status-dot { position: absolute; bottom: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; }
-  .status-dot.pending { background: #ddd; }
-  .status-dot.processing { background: #f0a500; animation: pulse 1s infinite; }
-  .status-dot.done { background: #4caf50; }
-  .status-dot.error { background: #f44336; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .start-btn { width: 100%; padding: 13px; background: #1a1a1a; color: #fff; border: none; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; transition: background 0.15s; }
-  .start-btn:hover { background: #333; }
-  .start-btn:disabled { background: #ddd; color: #aaa; cursor: default; }
-  .progress-bar-wrap { background: #eee; border-radius: 99px; height: 6px; margin: 12px 0; overflow: hidden; }
-  .progress-bar { height: 100%; background: #1a1a1a; border-radius: 99px; transition: width 0.3s; }
-  .results { display: flex; flex-direction: column; gap: 12px; }
-  .result-card { background: #fff; border-radius: 16px; border: 1.5px solid #eee; overflow: hidden; }
-  .result-card.confirmed { border-color: #c8e6c9; }
-  .result-card.duplicate { border-color: #ffe0b2; }
-  .result-card.skipped .result-top { opacity: 0.5; }
-  .result-card.skipped .result-bottom { opacity: 0.5; }
-  .result-card.skipped .alts { opacity: 0.5; }
-  .skip-prompt { padding: 10px 12px; border-top: 1px solid #f5f5f5; display: flex; align-items: center; gap: 8px; }
-  .result-top { display: flex; }
-  .scan-thumb { width: 90px; height: 90px; object-fit: cover; flex-shrink: 0; }
-  .result-info { flex: 1; padding: 12px; min-width: 0; }
-  .result-filename { font-size: 11px; color: #aaa; margin-bottom: 4px; }
-  .result-match { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.3; margin-bottom: 2px; }
-  .result-stock { font-size: 12px; color: #888; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 4px; }
-  .badge.high { background: #e8f5e9; color: #2e7d32; }
-  .badge.medium { background: #fff3e0; color: #e65100; }
-  .badge.low { background: #ffebee; color: #c62828; }
-  .badge.nomatch { background: #f5f5f5; color: #999; }
-  .badge.duplicate { background: #fff3e0; color: #e65100; }
-  .result-bottom { padding: 10px 12px; border-top: 1px solid #f5f5f5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .stock-input { width: 64px; text-align: center; font-size: 14px; font-family: 'DM Sans', sans-serif; padding: 6px 8px; border: 1.5px solid #ddd; border-radius: 8px; outline: none; }
-  .stock-input:focus { border-color: #1a1a1a; }
-  .skip-btn { padding: 7px 10px; background: #f5f5f5; color: #888; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-  .refine-btn { padding: 7px 12px; background: #e8f0fe; color: #1a73e8; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; font-weight: 500; }
-  .refine-panel { padding: 12px; background: #f8f9ff; border-top: 1px solid #e8f0fe; display: none; }
-  .refine-panel.open { display: block; }
-  .refine-panel label { font-size: 12px; color: #555; display: block; margin-bottom: 4px; font-weight: 500; }
-  .refine-panel select { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; margin-bottom: 10px; background: #fff; }
-  .refine-search-btn { width: 100%; padding: 9px; background: #1a73e8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
-  .new-product-btn { padding: 7px 12px; background: #f0e6ff; color: #7c3aed; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; font-weight: 500; }
-  .new-product-panel { padding: 12px; background: #faf5ff; border-top: 1px solid #e9d5ff; display: none; }
-  .new-product-panel.open { display: block; }
-  .new-product-panel label { font-size: 12px; color: #555; display: block; margin-bottom: 4px; font-weight: 500; }
-  .new-product-panel input { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; margin-bottom: 10px; }
-  .new-product-panel input:focus { border-color: #7c3aed; outline: none; }
-  .create-btn { width: 100%; padding: 9px; background: #7c3aed; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
-  .success-new { font-size: 13px; color: #2e7d32; background: #e8f5e9; padding: 8px 12px; border-radius: 8px; margin-top: 8px; }
-  .alts { padding: 0 12px 10px; }
-  .alts-label { font-size: 11px; color: #bbb; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .alt-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid #f8f8f8; cursor: pointer; border-radius: 6px; }
-  .alt-row:hover { background: #fafafa; }
-  .alt-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
-  .alt-name { font-size: 12px; color: #555; flex: 1; }
-  .alt-stock { font-size: 11px; color: #bbb; }
-  .save-all-btn { width: 100%; padding: 14px; background: #2e7d32; color: #fff; border: none; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; margin-top: 1rem; transition: background 0.15s; }
-  .save-all-btn:hover { background: #1b5e20; }
-  .save-all-btn:disabled { background: #ddd; color: #aaa; cursor: default; }
-  .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 500; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
-  .toast.show { opacity: 1; }
-  .processing-label { font-size: 13px; color: #888; text-align: center; margin: 8px 0; }
-  .match-img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; flex-shrink: 0; }
-  .crop-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-  .crop-modal { background: #fff; border-radius: 20px; padding: 1.5rem; width: 100%; max-width: 420px; }
-  .crop-modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-  .crop-modal p { font-size: 13px; color: #888; margin-bottom: 1rem; }
-  .crop-container { position: relative; width: 100%; aspect-ratio: 661/1051; border-radius: 8.03% / 5.05%; overflow: hidden; background: #f5f5f5; cursor: grab; touch-action: none; }
-  .crop-container:active { cursor: grabbing; }
-  .crop-container img { position: absolute; transform-origin: center center; pointer-events: none; user-select: none; }
-  .crop-controls { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
-  .crop-controls label { font-size: 12px; color: #888; white-space: nowrap; }
-  .crop-controls input[type=range] { flex: 1; }
-  .crop-actions { display: flex; gap: 8px; margin-top: 14px; }
-  .crop-confirm-btn { flex: 1; padding: 10px; background: #7c3aed; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; font-weight: 600; cursor: pointer; }
-  .crop-cancel-btn { padding: 10px 16px; background: #f5f5f5; color: #555; border: none; border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-</style>
-</head>
-<body>
-<div class="app">
-  <div class="header">
-    <div class="logo">
-      <svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-    </div>
-    <h1>Poca Stock Tool</h1>
-    <p class="subtitle">Scan your photocards → AI matches → update stock in bulk</p>
-  </div>
-  <div class="upload-zone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    <p>Select your scanned photocards</p>
-    <span>Multiple files at once supported</span>
-    <input type="file" id="fileInput" accept="image/*" multiple>
-  </div>
-  <div id="queueSection" style="display:none">
-    <div class="queue">
-      <div class="queue-header"><span class="queue-title" id="queueTitle">0 photos selected</span></div>
-      <div class="queue-grid" id="queueGrid"></div>
-    </div>
-    <button class="start-btn" id="startBtn" onclick="startBatch()">Start matching</button>
-    <div id="progressSection" style="display:none">
-      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
-      <p class="processing-label" id="progressLabel"></p>
-    </div>
-  </div>
-  <div class="results" id="results"></div>
-  <button class="save-all-btn" id="saveAllBtn" style="display:none" onclick="saveAll()">Save all to Shopify</button>
-  <button class="save-all-btn" id="csvBtn" style="display:none;background:#1565c0;margin-top:8px" onclick="downloadBarcodeCSV()">📄 Download barcodes CSV</button>
-</div>
-<div class="toast" id="toast"></div>
+const express = require('express');
+const fetch = require('node-fetch');
+const { createClient } = require('@supabase/supabase-js');
+const OpenAI = require('openai');
+const crypto = require('crypto');
+const app = express();
 
-<script>
-const PROXY = 'https://poca-proxy.onrender.com';
-let files = [], matchResults = [], allMembers = [];
+// Raw body parsing voor webhooks (MOET vóór express.json)
+app.use('/webhook/product', express.raw({ type: 'application/json' }));
+app.use('/webhook/product-delete', express.raw({ type: 'application/json' }));
 
-// Sessie tracker — alleen verhoogd na succesvol aanmaken product
-const sessionNextNum = {};
+app.use(express.json({ limit: '50mb' }));
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+app.use('/watermark.png', express.static('pocacafe-watermark-blokkies.png'));
 
-fetch(PROXY + '/filters').then(r => r.json()).then(data => {
-  allMembers = data.members || [];
-}).catch(() => {});
+const SHOP = 'af8159-30.myshopify.com';
+let ACCESS_TOKEN = process.env.ACCESS_TOKEN || '';
+const CLIENT_ID = 'e86f8d13b5c1c36583eb6155364e764a';
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); addFiles(Array.from(e.dataTransfer.files)); });
-fileInput.addEventListener('change', () => { addFiles(Array.from(fileInput.files)); fileInput.value = ''; });
+const supabase = createClient(
+  'https://vxwrdspgdglnuvkcliph.supabase.co',
+  process.env.SUPABASE_KEY
+);
 
-function addFiles(newFiles) {
-  newFiles.forEach(f => { if (f.type.startsWith('image/')) files.push(f); });
-  renderQueue();
-}
+const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
 
-function renderQueue() {
-  const section = document.getElementById('queueSection');
-  const grid = document.getElementById('queueGrid');
-  const title = document.getElementById('queueTitle');
-  if (!files.length) { section.style.display = 'none'; return; }
-  section.style.display = 'block';
-  title.textContent = files.length + " photo" + (files.length !== 1 ? 's' : '') + " selected";
-  grid.innerHTML = '';
-  files.forEach((f, i) => {
-    const url = URL.createObjectURL(f);
-    const div = document.createElement('div');
-    div.className = 'queue-thumb';
-    div.id = 'thumb-' + i;
-    div.innerHTML = '<img src="' + url + '" alt=""><button class="remove" onclick="removeFile(' + i + ')">×</button><span class="status-dot pending" id="dot-' + i + '"></span>';
-    grid.appendChild(div);
-  });
-}
+app.get('/auth', (req, res) => {
+  const scopes = 'read_products,write_products,write_inventory';
+  const redirect = 'https://poca-proxy.onrender.com/callback';
+  res.redirect(`https://${SHOP}/admin/oauth/authorize?client_id=${CLIENT_ID}&scope=${scopes}&redirect_uri=${redirect}`);
+});
 
-function removeFile(i) { files.splice(i, 1); renderQueue(); }
-
-function toBase64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result.split(',')[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-}
-
-async function searchClip(base64, mediaType, filterMember) {
-  const resp = await fetch(PROXY + '/search-clip', {
+app.get('/callback', async (req, res) => {
+  const { code } = req.query;
+  const resp = await fetch(`https://${SHOP}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_base64: base64, media_type: mediaType, filter_member: filterMember || null, filter_album: null })
+    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code })
   });
   const data = await resp.json();
-  if (data.error) throw new Error(data.error);
-  return data.matches || [];
-}
+  ACCESS_TOKEN = data.access_token;
+  res.send('Token opgeslagen!');
+});
 
-async function startBatch() {
-  if (!files.length) return;
-  const btn = document.getElementById('startBtn');
-  btn.disabled = true;
-  btn.textContent = 'Processing...';
-  document.getElementById('progressSection').style.display = 'block';
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('saveAllBtn').style.display = 'none';
-  matchResults = [];
-
-  for (let i = 0; i < files.length; i++) {
-    setDot(i, 'processing');
-    updateProgress(i, files.length);
-    try {
-      const b64 = await toBase64(files[i]);
-      const url = URL.createObjectURL(files[i]);
-      const matches = await searchClip(b64, files[i].type, null);
-      const best = matches[0] || null;
-      matchResults.push({
-        index: i, filename: files[i].name, base64: b64, mediaType: files[i].type,
-        best, alternatives: matches.slice(1, 4), url,
-        skipped: !best, showingNewProduct: false,
-        newStock: best ? best.stock : 0,
-        selectedInventoryItemId: best ? best.inventory_item_id : null
-      });
-      setDot(i, best ? 'done' : 'error');
-    } catch(e) {
-      const url = URL.createObjectURL(files[i]);
-      matchResults.push({
-        index: i, filename: files[i].name, base64: null, mediaType: files[i].type,
-        best: null, alternatives: [], url, skipped: true, showingNewProduct: false,
-        newStock: 0, selectedInventoryItemId: null, error: e.message
-      });
-      setDot(i, 'error');
-    }
-    renderResults();
-  }
-
-  updateProgress(files.length, files.length);
-  document.getElementById('progressLabel').textContent = 'Done!';
-  document.getElementById('saveAllBtn').style.display = 'block';
-  btn.disabled = false;
-  btn.textContent = 'Re-match';
-}
-
-function setDot(i, status) {
-  const dot = document.getElementById('dot-' + i);
-  if (dot) dot.className = 'status-dot ' + status;
-}
-
-function updateProgress(done, total) {
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  document.getElementById('progressBar').style.width = pct + '%';
-  document.getElementById('progressLabel').textContent = done + ' of ' + total + ' processed...';
-}
-
-function isDuplicate(ri) {
-  const r = matchResults[ri];
-  if (!r.selectedInventoryItemId) return false;
-  return matchResults.some((other, i) => i !== ri && other.selectedInventoryItemId === r.selectedInventoryItemId);
-}
-
-function similarityLabel(sim) { return sim >= 0.7 ? 'high' : sim >= 0.5 ? 'medium' : 'low'; }
-function similarityText(sim) { return sim >= 0.7 ? 'High confidence' : sim >= 0.5 ? 'Medium confidence' : 'Low confidence'; }
-
-function renderResults() {
-  const container = document.getElementById('results');
-  container.innerHTML = '';
-  matchResults.forEach((r, ri) => {
-    const card = document.createElement('div');
-    const sim = r.best ? r.best.similarity : 0;
-    const isSkipped = r.skipped && !r.showingNewProduct;
-    const dup = isDuplicate(ri);
-    card.className = 'result-card' + (r.best && !r.skipped ? ' confirmed' : '') + (isSkipped ? ' skipped' : '') + (dup ? ' duplicate' : '');
-    card.id = 'card-' + ri;
-
-    const memberOptions = '<option value="">All members</option>' + allMembers.map(m => '<option value="' + m + '">' + m + '</option>').join('');
-
-    const refinePanel = '<div class="refine-panel" id="refine-' + ri + '">' +
-      '<label>Member</label><select id="refine-member-' + ri + '">' + memberOptions + '</select>' +
-      '<button class="refine-search-btn" onclick="doRefine(' + ri + ')">Search again</button></div>';
-
-    const newProductPanel = '<div class="new-product-panel' + (r.showingNewProduct ? ' open' : '') + '" id="new-product-' + ri + '">' +
-      '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM">' +
-      '<label>Artist</label><input type="text" id="new-artist-' + ri + '" placeholder="e.g. ATEEZ">' +
-      '<label>Member</label><input type="text" id="new-member-' + ri + '" placeholder="e.g. HONGJOONG" oninput="fetchLocation(' + ri + ')">' +
-      '<label>Location</label><input type="text" id="new-location-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
-      '<label>Handle</label><input type="text" id="new-handle-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
-      '<label>Price (EUR)</label><input type="number" id="new-price-' + ri + '" placeholder="3.00" step="0.01" min="0" value="3.00">' +
-      '<label>Stock</label><input type="number" id="new-stock-' + ri + '" placeholder="1" min="0" value="1">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-      '<input type="checkbox" id="new-draft-' + ri + '" checked>' +
-      '<label style="margin:0;font-size:13px;color:#555">Als draft opslaan</label></div>' +
-      '<button class="create-btn" onclick="createProduct(' + ri + ')">Create product in Shopify</button>' +
-      '<div id="new-product-msg-' + ri + '"></div></div>';
-
-    const altsHtml = r.alternatives && r.alternatives.length ? (
-      '<div class="alts"><p class="alts-label">Other possible matches</p>' +
-      r.alternatives.map(a =>
-        '<div class="alt-row" onclick="selectAlt(' + ri + ',' + a.inventory_item_id + ',\'' + a.title.replace(/'/g,"\\'") + '\',' + a.stock + ',\'' + (a.image_url || r.url) + '\')">' +
-        '<img class="alt-thumb" src="' + (a.image_url || r.url) + '" onerror="this.style.display=\'none\'" alt="">' +
-        '<span class="alt-name">' + a.title + '</span>' +
-        '<span class="alt-stock">' + Math.round((a.similarity || 0) * 100) + '% · ' + a.stock + ' pcs.</span></div>'
-      ).join('') + '</div>'
-    ) : '';
-
-    const dupBadge = dup ? ' <span class="badge duplicate">⚠️ Duplicate</span>' : '';
-
-    if (!r.best) {
-      card.innerHTML =
-        '<div class="result-top"><img class="scan-thumb" id="scan-img-' + ri + '" src="' + r.url + '" alt="">' +
-        '<div class="result-info"><p class="result-filename">' + r.filename + '</p>' +
-        '<p class="result-match" style="color:#aaa">No match found</p>' +
-        '<span class="badge nomatch">No match</span>' + dupBadge + '</div></div>' +
-        '<div class="result-bottom"><span style="font-size:12px;color:#aaa;flex:1">' + (r.error || '') + '</span>' +
-        '<button class="new-product-btn" onclick="toggleNewProduct(' + ri + ')">+ New product</button>' +
-        '<button class="refine-btn" onclick="toggleRefine(' + ri + ')">Refine</button>' +
-        '<button class="skip-btn" onclick="toggleSkip(' + ri + ')">Skip</button></div>' +
-        newProductPanel + refinePanel + altsHtml;
-    } else {
-      const skipPrompt = r.skipped ? (
-        '<div class="skip-prompt"><span style="font-size:12px;color:#aaa;flex:1">Create new product?</span>' +
-        '<button class="new-product-btn" onclick="toggleNewProduct(' + ri + ')">+ New product</button></div>'
-      ) : '';
-      card.innerHTML =
-        '<div class="result-top"><img class="scan-thumb" id="scan-img-' + ri + '" src="' + r.url + '" alt="">' +
-        '<div class="result-info"><p class="result-filename">' + r.filename + '</p>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">' +
-        '<img class="match-img" src="' + (r.best.image_url || r.url) + '" onerror="this.style.display=\'none\'" alt="">' +
-        '<p class="result-match" id="match-title-' + ri + '">' + r.best.title + '</p></div>' +
-        '<p class="result-stock" id="match-stock-' + ri + '">Current stock: <strong>' + r.best.stock + '</strong></p>' +
-        '<span class="badge ' + similarityLabel(sim) + '">' + similarityText(sim) + ' · ' + Math.round(sim * 100) + '%</span>' + dupBadge +
-        '</div></div>' +
-        '<div class="result-bottom">' +
-        '<input type="number" class="stock-input" id="stock-' + ri + '" value="' + r.newStock + '" min="0" onchange="updateNewStock(' + ri + ', this.value)">' +
-        '<button class="refine-btn" onclick="toggleRefine(' + ri + ')">Refine</button>' +
-        '<button class="skip-btn" onclick="toggleSkip(' + ri + ')">' + (r.skipped ? 'Restore' : 'Skip') + '</button></div>' +
-        skipPrompt + newProductPanel + refinePanel + altsHtml;
-    }
-    container.appendChild(card);
-  });
-}
-
-// ── Crop modal ──────────────────────────────────────────────
-const CARD_W = 661, CARD_H = 1051;
-let cropState = { ri: null, scale: 1, offsetX: 0, offsetY: 0, dragging: false, lastX: 0, lastY: 0 };
-
-function adjustZoom(delta) {
-  const slider = document.getElementById('cropZoom');
-  slider.value = Math.min(parseInt(slider.max), Math.max(parseInt(slider.min), parseInt(slider.value) + delta));
-  updateCrop();
-}
-
-function openCropModal(ri) {
-  const r = matchResults[ri];
-  cropState.ri = ri;
-  cropState.offsetX = 0;
-  cropState.offsetY = 0;
-  const img = document.getElementById('cropImg');
-  img.src = r.url;
-  img.onload = () => {
-    const container = document.getElementById('cropContainer');
-    const cw = container.clientWidth, ch = container.clientHeight;
-    const minScale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
-    const minPct = Math.round(minScale * 100);
-    document.getElementById('cropZoom').min = minPct;
-    document.getElementById('cropZoom').value = minPct;
-    cropState.scale = minScale;
-    cropState.offsetX = 0; cropState.offsetY = 0;
-    updateCrop();
-  };
-  document.getElementById('cropModal').style.display = 'flex';
-  setupCropDrag();
-}
-
-function closeCropModal() { document.getElementById('cropModal').style.display = 'none'; }
-
-function updateCrop() {
-  const zoom = parseInt(document.getElementById('cropZoom').value);
-  cropState.scale = zoom / 100;
-  const img = document.getElementById('cropImg');
-  const container = document.getElementById('cropContainer');
-  const cw = container.clientWidth, ch = container.clientHeight;
-  const iw = img.naturalWidth * cropState.scale;
-  const ih = img.naturalHeight * cropState.scale;
-  const maxX = Math.max(0, (iw - cw) / 2);
-  const maxY = Math.max(0, (ih - ch) / 2);
-  cropState.offsetX = Math.max(-maxX, Math.min(maxX, cropState.offsetX));
-  cropState.offsetY = Math.max(-maxY, Math.min(maxY, cropState.offsetY));
-  img.style.width = iw + 'px'; img.style.height = ih + 'px';
-  img.style.left = ((cw - iw) / 2 + cropState.offsetX) + 'px';
-  img.style.top = ((ch - ih) / 2 + cropState.offsetY) + 'px';
-}
-
-function setupCropDrag() {
-  const container = document.getElementById('cropContainer');
-  container.onmousedown = (e) => { cropState.dragging = true; cropState.lastX = e.clientX; cropState.lastY = e.clientY; };
-  document.onmousemove = (e) => {
-    if (!cropState.dragging) return;
-    cropState.offsetX += e.clientX - cropState.lastX; cropState.offsetY += e.clientY - cropState.lastY;
-    cropState.lastX = e.clientX; cropState.lastY = e.clientY; updateCrop();
-  };
-  document.onmouseup = () => { cropState.dragging = false; };
-  container.ontouchstart = (e) => { cropState.dragging = true; cropState.lastX = e.touches[0].clientX; cropState.lastY = e.touches[0].clientY; };
-  container.ontouchmove = (e) => {
-    if (!cropState.dragging) return; e.preventDefault();
-    cropState.offsetX += e.touches[0].clientX - cropState.lastX; cropState.offsetY += e.touches[0].clientY - cropState.lastY;
-    cropState.lastX = e.touches[0].clientX; cropState.lastY = e.touches[0].clientY; updateCrop();
-  };
-  container.ontouchend = () => { cropState.dragging = false; };
-}
-
-async function confirmCrop() {
-  const ri = cropState.ri;
-  const r = matchResults[ri];
-  const container = document.getElementById('cropContainer');
-  const img = document.getElementById('cropImg');
-  const cw = container.clientWidth, ch = container.clientHeight;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = CARD_W; canvas.height = CARD_H;
-  const ctx = canvas.getContext('2d');
-  const radius = 53;
-  ctx.beginPath();
-  ctx.moveTo(radius, 0); ctx.lineTo(CARD_W - radius, 0);
-  ctx.quadraticCurveTo(CARD_W, 0, CARD_W, radius);
-  ctx.lineTo(CARD_W, CARD_H - radius);
-  ctx.quadraticCurveTo(CARD_W, CARD_H, CARD_W - radius, CARD_H);
-  ctx.lineTo(radius, CARD_H);
-  ctx.quadraticCurveTo(0, CARD_H, 0, CARD_H - radius);
-  ctx.lineTo(0, radius);
-  ctx.quadraticCurveTo(0, 0, radius, 0);
-  ctx.closePath(); ctx.clip();
-
-  const displayScale = cw / CARD_W;
-  const imgW = img.naturalWidth * cropState.scale;
-  const imgH = img.naturalHeight * cropState.scale;
-  const imgX = (cw - imgW) / 2 + cropState.offsetX;
-  const imgY = (ch - imgH) / 2 + cropState.offsetY;
-  ctx.drawImage(img, imgX / displayScale, imgY / displayScale, imgW / displayScale, imgH / displayScale);
-
-  const dataUrl = canvas.toDataURL('image/png');
-  r.base64 = dataUrl.split(',')[1];
-  r.mediaType = 'image/png';
-  r.url = dataUrl;
-  r.cropped = true;
-  const scanImg = document.getElementById('scan-img-' + ri);
-  if (scanImg) scanImg.src = dataUrl;
-
-  closeCropModal();
-
-  // Open new product panel + auto-fill
-  const panel = document.getElementById('new-product-' + ri);
-  if (panel && !panel.classList.contains('open')) {
-    panel.classList.add('open');
-
-    // Auto-detect member
-    const memberField = document.getElementById('new-member-' + ri);
-    const detectedMember = detectMemberFromMatches(ri);
-    if (detectedMember && memberField && !memberField.value) {
-      memberField.value = detectedMember;
-      fetchLocation(ri);
-    }
-
-    // Auto-detect artist
-    const artistField = document.getElementById('new-artist-' + ri);
-    if (artistField && !artistField.value) {
-      const allMatches = [r.best, ...(r.alternatives || [])].filter(Boolean);
-      const artists = allMatches.map(m => m.artist).filter(Boolean);
-      if (artists.length > 0) {
-        const counts = {};
-        artists.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
-        artistField.value = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-      }
-    }
-  }
-}
-
-window.toggleNewProduct = function(ri) {
-  const panel = document.getElementById('new-product-' + ri);
-  if (!panel) return;
-  if (!panel.classList.contains('open')) {
-    openCropModal(ri);
-    return;
-  }
-  panel.classList.toggle('open');
-};
-
-// ── Watermark ───────────────────────────────────────────────
-const WATERMARK_URL = PROXY + '/watermark.png';
-
-async function applyWatermark(base64, mediaType) {
-  return new Promise((resolve, reject) => {
-    const productImg = new Image();
-    const watermarkImg = new Image();
-    let loaded = 0;
-    function onLoad() {
-      loaded++;
-      if (loaded < 2) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = productImg.naturalWidth; canvas.height = productImg.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(productImg, 0, 0);
-      const wmAspect = watermarkImg.naturalWidth / watermarkImg.naturalHeight;
-      const wmW = canvas.width, wmH = wmW / wmAspect;
-      ctx.drawImage(watermarkImg, 0, canvas.height - wmH, wmW, wmH);
-      resolve(canvas.toDataURL('image/png').split(',')[1]);
-    }
-    productImg.crossOrigin = 'anonymous'; watermarkImg.crossOrigin = 'anonymous';
-    productImg.onload = onLoad; watermarkImg.onload = onLoad;
-    productImg.onerror = () => reject(new Error('Productafbeelding laden mislukt'));
-    watermarkImg.onerror = () => reject(new Error('Watermark laden mislukt'));
-    productImg.src = 'data:' + mediaType + ';base64,' + base64;
-    watermarkImg.src = WATERMARK_URL;
-  });
-}
-
-// ── Enhance ─────────────────────────────────────────────────
-window.enhanceCrop = async function() {
-  const ri = cropState.ri;
-  const btn = document.getElementById('cropEnhanceBtn');
-  const r = matchResults[ri];
-
-  if (r.enhanced) {
-    r.enhanced = false;
-    r.base64 = r.originalBase64; r.mediaType = r.originalMediaType;
-    document.getElementById('cropImg').src = r.originalUrl || r.url;
-    btn.textContent = '✨ Enhance'; return;
-  }
-  if (r.enhancedBase64) {
-    r.enhanced = true;
-    document.getElementById('cropImg').src = 'data:image/png;base64,' + r.enhancedBase64;
-    btn.textContent = '↩ Origineel'; return;
-  }
-
-  btn.textContent = '⏳ Bezig...'; btn.disabled = true;
+app.all('/shopify/*', async (req, res) => {
+  if (!ACCESS_TOKEN) return res.status(401).json({ error: 'Niet geautoriseerd' });
   try {
-    const resp = await fetch(PROXY + '/enhance', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: r.base64, media_type: r.mediaType })
-    });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    r.enhancedBase64 = data.enhanced_base64;
-    r.originalBase64 = r.base64; r.originalMediaType = r.mediaType; r.originalUrl = r.url;
-    r.enhanced = true; r.base64 = data.enhanced_base64; r.mediaType = 'image/png';
-    const newUrl = 'data:image/png;base64,' + data.enhanced_base64;
-    r.url = newUrl;
-    document.getElementById('cropImg').src = newUrl;
-    document.getElementById('cropImg').onload = () => {
-      const container = document.getElementById('cropContainer');
-      const img = document.getElementById('cropImg');
-      const minScale = Math.max(container.clientWidth / img.naturalWidth, container.clientHeight / img.naturalHeight);
-      const minPct = Math.round(minScale * 100);
-      document.getElementById('cropZoom').min = minPct;
-      document.getElementById('cropZoom').value = minPct;
-      cropState.scale = minScale; cropState.offsetX = 0; cropState.offsetY = 0; updateCrop();
+    const path = req.path.replace('/shopify/', '');
+    const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `https://${SHOP}/admin/api/2024-01/${path}${query}`;
+    const options = {
+      method: req.method,
+      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
     };
-    btn.textContent = '↩ Origineel'; btn.disabled = false;
+    if (req.method !== 'GET' && req.method !== 'HEAD') options.body = JSON.stringify(req.body);
+    const response = await fetch(url, options);
+    const result = await response.json();
+    res.status(response.status).json(result);
   } catch(e) {
-    btn.textContent = '✨ Enhance'; btn.disabled = false;
-    alert('Enhancement mislukt: ' + e.message);
+    res.status(500).json({ error: e.message });
   }
-};
+});
 
-// ── fetchLocation — offset pas verhogen in createProduct ────
-window.fetchLocation = async function(ri) {
-  const member = document.getElementById('new-member-' + ri).value.trim();
-  const locationField = document.getElementById('new-location-' + ri);
-  const handleField = document.getElementById('new-handle-' + ri);
-  if (!member || member.length < 2) {
-    locationField.value = ''; locationField.placeholder = 'Wordt automatisch ingevuld...';
-    if (handleField) { handleField.value = ''; handleField.placeholder = 'Wordt automatisch ingevuld...'; }
-    return;
-  }
-  locationField.placeholder = 'Ophalen...'; locationField.value = '';
-  if (handleField) { handleField.placeholder = 'Ophalen...'; handleField.value = ''; }
-  try {
-    const resp = await fetch(PROXY + '/next-product-info', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member })
-    });
-    const data = await resp.json();
-    if (data.location && data.prefix) {
-      const prefix = data.prefix;
-      const baseLocNum = parseInt(data.location.split('-')[1]);
-      // Initialiseer sessie teller als nog niet bestaat
-      if (sessionNextNum[prefix] === undefined) sessionNextNum[prefix] = baseLocNum;
-      locationField.value = prefix + '-' + String(sessionNextNum[prefix]).padStart(5, '0');
-
-      if (data.handle && handleField) {
-        const handleBase = data.handle.split('-').slice(0, -1).join('-');
-        const baseHandleNum = parseInt(data.handle.split('-').pop());
-        const hKey = 'h_' + handleBase;
-        if (sessionNextNum[hKey] === undefined) sessionNextNum[hKey] = baseHandleNum;
-        handleField.value = handleBase + '-' + sessionNextNum[hKey];
-      }
-      // Sla SKU op in matchResult
-      if (data.sku) matchResults[ri]._nextSku = data.sku;
-    } else {
-      locationField.placeholder = 'Geen prefix gevonden voor ' + member;
-    }
-  } catch(e) {
-    locationField.placeholder = 'Fout bij ophalen';
-  }
-};
-
-function detectMemberFromMatches(ri) {
-  const r = matchResults[ri];
-  const allMatches = [];
-  if (r.best && r.best.member) allMatches.push(r.best.member);
-  if (r.alternatives) r.alternatives.forEach(a => { if (a.member) allMatches.push(a.member); });
-  if (!allMatches.length) return null;
-  const counts = {};
-  allMatches.forEach(m => { counts[m] = (counts[m] || 0) + 1; });
-  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  return top[1] >= Math.ceil(allMatches.length / 2) ? top[0] : null;
-}
-
-window.createProduct = async function(ri) {
-  const title = document.getElementById('new-title-' + ri).value.trim();
-  const artist = document.getElementById('new-artist-' + ri).value.trim();
-  const member = document.getElementById('new-member-' + ri).value.trim();
-  const location = document.getElementById('new-location-' + ri).value.trim();
-  const handle = document.getElementById('new-handle-' + ri).value.trim();
-  const price = document.getElementById('new-price-' + ri).value;
-  const stock = parseInt(document.getElementById('new-stock-' + ri).value) || 0;
-  const isDraft = document.getElementById('new-draft-' + ri).checked;
-  const r = matchResults[ri];
-
-  if (!title) { alert('Please enter a product name'); return; }
-
-  const btn = document.querySelector('#new-product-' + ri + ' .create-btn');
-  btn.disabled = true; btn.textContent = 'Watermark toevoegen...';
-
-  try {
-    const watermarkedBase64 = await applyWatermark(r.base64, r.mediaType);
-    btn.textContent = 'Creating...';
-
-    const toTitleCase = str => str.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    const tagsArr = ['Photocards'];
-    if (artist) tagsArr.push(toTitleCase(artist));
-    if (member) tagsArr.push(toTitleCase(member));
-
-    const metafields = [];
-    if (artist) metafields.push({ namespace: 'custom', key: 'artist', value: artist, type: 'single_line_text_field' });
-    if (member) metafields.push({ namespace: 'custom', key: 'member', value: member, type: 'single_line_text_field' });
-    if (location) metafields.push({ namespace: 'custom', key: 'location', value: location, type: 'single_line_text_field' });
-
-    const productResp = await fetch(PROXY + '/shopify/products.json', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        product: {
-          title, handle: handle || undefined,
-          status: isDraft ? 'draft' : 'active',
-          tags: tagsArr.join(', '),
-          variants: [{ price: price || '0.00', inventory_management: 'shopify', inventory_quantity: stock, sku: r._nextSku || undefined }],
-          images: [{ attachment: watermarkedBase64, filename: r.filename.replace(/\.[^.]+$/, '') + '_wm.png' }],
-          metafields
-        }
-      })
-    });
-
-    const productData = await productResp.json();
-    if (productData.errors) throw new Error(JSON.stringify(productData.errors));
-
-    // ✅ Verhoog sessie tellers NA succesvol aanmaken
-    if (location) {
-      const prefix = location.split('-')[0];
-      if (sessionNextNum[prefix] !== undefined) sessionNextNum[prefix]++;
-    }
-    if (handle) {
-      const hBase = handle.split('-').slice(0, -1).join('-');
-      const hKey = 'h_' + hBase;
-      if (sessionNextNum[hKey] !== undefined) sessionNextNum[hKey]++;
-    }
-
-    btn.textContent = 'Indexing...';
-    fetch(PROXY + '/index-single', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: productData.product.id })
-    }).catch(e => console.warn('Index fout:', e.message));
-
-    // Bewaar product ID voor CSV export
-    r.createdProductId = productData.product.id;
-    document.getElementById('csvBtn').style.display = 'block';
-
-    document.getElementById('new-product-msg-' + ri).innerHTML =
-      '<p class="success-new">✓ Product created: ' + productData.product.title + '</p>';
-    btn.textContent = 'Created ✓';
-  } catch(e) {
-    document.getElementById('new-product-msg-' + ri).innerHTML =
-      '<p style="font-size:13px;color:#c62828">' + e.message + '</p>';
-    btn.disabled = false; btn.textContent = 'Create product in Shopify';
-  }
-};
-
-window.toggleRefine = function(ri) { document.getElementById('refine-' + ri).classList.toggle('open'); };
-
-window.doRefine = async function(ri) {
-  const member = document.getElementById('refine-member-' + ri).value;
-  const r = matchResults[ri];
-  if (!r.base64) return;
-  const btn = document.querySelector('#refine-' + ri + ' .refine-search-btn');
-  btn.textContent = 'Searching...'; btn.disabled = true;
-  try {
-    const matches = await searchClip(r.base64, r.mediaType, member || null);
-    const best = matches[0] || null;
-    matchResults[ri] = { ...matchResults[ri], best, alternatives: matches.slice(1, 4), skipped: !best, showingNewProduct: false, newStock: best ? best.stock : 0, selectedInventoryItemId: best ? best.inventory_item_id : null };
-    renderResults();
-  } catch(e) { btn.textContent = 'Error: ' + e.message; btn.disabled = false; }
-};
-
-window.updateNewStock = function(ri, val) { matchResults[ri].newStock = parseInt(val) || 0; };
-window.toggleSkip = function(ri) {
-  matchResults[ri].skipped = !matchResults[ri].skipped;
-  if (!matchResults[ri].skipped) matchResults[ri].showingNewProduct = false;
-  renderResults();
-};
-window.selectAlt = function(ri, inventoryItemId, title, stock, img) {
-  matchResults[ri].selectedInventoryItemId = inventoryItemId;
-  matchResults[ri].newStock = stock;
-  matchResults[ri].best = Object.assign({}, matchResults[ri].best || {}, { title, stock, image_url: img, inventory_item_id: inventoryItemId });
-  matchResults[ri].skipped = false;
-  renderResults();
-};
-
-// Bijgehouden producten voor CSV export
-let savedProductsForCSV = [];
-
-async function saveAll() {
-  const toSave = matchResults.filter(r => !r.skipped && r.selectedInventoryItemId);
-  if (!toSave.length) { showToast('Nothing to save'); return; }
-  const btn = document.getElementById('saveAllBtn');
-  btn.disabled = true; btn.textContent = '0 of ' + toSave.length + ' saved...';
-  savedProductsForCSV = [];
-  let saved = 0;
-  for (const r of toSave) {
-    try {
-      const locResp = await fetch(PROXY + '/shopify/inventory_levels.json?inventory_item_ids=' + r.selectedInventoryItemId);
-      const locData = await locResp.json();
-      const locationId = locData.inventory_levels?.[0]?.location_id;
-      if (!locationId) throw new Error('No location found');
-      await fetch(PROXY + '/shopify/inventory_levels/set.json', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location_id: locationId, inventory_item_id: r.selectedInventoryItemId, available: r.newStock })
-      });
-
-      // Haal product details op voor CSV — sla oude stock op voor delta berekening
-      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
-      const productData = await productResp.json();
-      if (productData.product) {
-        const oldStock = productData.product.variants?.[0]?.inventory_quantity || 0;
-        const delta = r.newStock - oldStock;
-        savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta: delta > 0 ? delta : r.newStock });
-      }
-
-      saved++; btn.textContent = saved + ' of ' + toSave.length + ' saved...';
-    } catch(e) { console.error(r.filename, e); }
-  }
-  showToast('✓ ' + saved + ' products updated in Shopify!');
-  btn.disabled = false; btn.textContent = 'Save all to Shopify';
-
-  // Toon CSV knop als er producten zijn opgeslagen
-  if (savedProductsForCSV.length > 0) {
-    document.getElementById('csvBtn').style.display = 'block';
-  }
-}
-
-async function downloadBarcodeCSV() {
-  // Voeg ook nieuwe producten toe die deze sessie zijn aangemaakt
-  const newProducts = matchResults.filter(r => r.createdProductId);
-  for (const r of newProducts) {
-    if (!savedProductsForCSV.find(p => p.product.id === r.createdProductId)) {
-      try {
-        const productResp = await fetch(PROXY + '/shopify/products/' + r.createdProductId + '.json');
-        const productData = await productResp.json();
-        if (productData.product) {
-          savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta: r.newStock });
-        }
-      } catch(e) {}
-    }
-  }
-
-  if (!savedProductsForCSV.length) { showToast('Geen producten om te exporteren'); return; }
-
-  // Shopify CSV formaat — exacte kolomvolgorde
-  const headers = [
-    'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags','Published',
-    'Option1 Name','Option1 Value','Variant SKU','Variant Grams','Variant Inventory Tracker',
-    'Variant Inventory Qty','Variant Inventory Policy','Variant Fulfillment Service',
-    'Variant Price','Variant Requires Shipping','Variant Taxable','Variant Barcode',
-    'Image Src','Image Position','Gift Card',
-    'Artist (product.metafields.custom.artist)',
-    'Location (product.metafields.custom.location)',
-    'Member (product.metafields.custom.member)',
-    'Variant Weight Unit','Status'
-  ];
-
-  const rows = savedProductsForCSV.map(({ product, newStock, delta }) => {
-    const variant = product.variants?.[0] || {};
-    const image = product.images?.[0]?.src || '';
-    const tags = product.tags || '';
-    const artist = product.metafields?.find?.(m => m.key === 'artist')?.value || '';
-    const location = product.metafields?.find?.(m => m.key === 'location')?.value || '';
-    const member = product.metafields?.find?.(m => m.key === 'member')?.value || '';
-
-    return [
-      product.handle,
-      product.title,
-      '',
-      'Poca Cafe',
-      '',
-      '',
-      tags,
-      'false',
-      'Title',
-      'Default Title',
-      variant.sku || '',
-      '0.0',
-      'shopify',
-      delta ?? newStock,
-      'deny',
-      'manual',
-      variant.price || '',
-      'true',
-      'true',
-      variant.barcode || '',
-      image,
-      '1',
-      'false',
-      artist,
-      location,
-      member,
-      'kg',
-      product.status || 'draft'
-    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
-  });
-
-  const csv = [headers.join(','), ...rows].join('\n');
-
-  // Stuur naar proxy en open als directe URL
-  const resp = await fetch(PROXY + '/store-csv', {
+async function getClipEmbeddingsBatch(imageUrls) {
+  const inputs = imageUrls.join('\n');
+  const createResp = await fetch('https://api.replicate.com/v1/predictions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ csv, filename: 'poca-barcodes-' + new Date().toISOString().slice(0, 10) + '.csv' })
+    headers: {
+      'Authorization': `Token ${process.env.REPLICATE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'wait'
+    },
+    body: JSON.stringify({
+      version: '75b33f253f7714a281ad3e9b28f63e3232d583716ef6718f2e46641077ea040a',
+      input: { inputs }
+    })
   });
-  const data = await resp.json();
-  if (data.url) {
-    window.open(data.url, '_blank');
-  } else {
-    showToast('Fout bij genereren CSV');
-  }
+  const result = await createResp.json();
+  if (result.error) throw new Error('CLIP fout: ' + result.error);
+  if (!result.output) throw new Error('Geen output: ' + JSON.stringify(result));
+  return result.output;
 }
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+async function indexSingleProduct(product) {
+  if (!product.images || product.images.length === 0) return;
+
+  let artist = null, member = null, location = null;
+  try {
+    const metaResp = await fetch(
+      `https://${SHOP}/admin/api/2024-01/products/${product.id}/metafields.json?namespace=custom`,
+      { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } }
+    );
+    const metaData = await metaResp.json();
+    const metafields = metaData.metafields || [];
+    artist = metafields.find(m => m.key === 'artist')?.value || null;
+    member = metafields.find(m => m.key === 'member')?.value || null;
+    location = metafields.find(m => m.key === 'location')?.value || null;
+  } catch(e) {}
+
+  const imageUrl = product.images[0].src;
+  const embeddings = await getClipEmbeddingsBatch([imageUrl]);
+  const embedding = embeddings[0]?.embedding;
+  if (!embedding) throw new Error('Geen embedding');
+
+  const stock = product.variants.reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+  const variant = product.variants[0] || {};
+
+  await supabase.from('product_embeddings_clip').upsert({
+    shopify_product_id: product.id,
+    shopify_variant_id: variant.id,
+    inventory_item_id: variant.inventory_item_id,
+    title: product.title,
+    image_url: imageUrl,
+    stock: stock,
+    embedding: embedding,
+    member: member,
+    album: product.title.trim(),
+    artist: artist,
+    handle: product.handle || null,
+    barcode: variant.barcode || null,
+    price: variant.price ? Math.round(parseFloat(variant.price)) : null,
+    sku: variant.sku || null,
+    status: product.status || null,
+    vendor: 'Poca Cafe',
+    location: location
+  }, { onConflict: 'shopify_product_id' });
 }
-</script>
 
-<!-- Crop Modal -->
-<div class="crop-modal-overlay" id="cropModal" style="display:none">
-  <div class="crop-modal">
-    <h3>Bijsnijden</h3>
-    <p>Sleep om te positioneren, zoom in/uit met de slider</p>
-    <div class="crop-container" id="cropContainer">
-      <img id="cropImg" src="" alt="">
-    </div>
-    <div class="crop-controls">
-      <label>Zoom</label>
-      <button onclick="adjustZoom(-1)" style="background:#f5f5f5;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1">−</button>
-      <input type="range" id="cropZoom" min="100" max="300" value="100" step="1" oninput="updateCrop()">
-      <button onclick="adjustZoom(1)" style="background:#f5f5f5;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1">+</button>
-    </div>
-    <div class="crop-actions">
-      <button class="crop-cancel-btn" onclick="closeCropModal()">Annuleer</button>
-      <button class="crop-cancel-btn" id="cropEnhanceBtn" onclick="enhanceCrop()" style="background:#fff3e0;color:#e65100">✨ Enhance</button>
-      <button class="crop-confirm-btn" onclick="confirmCrop()">Bevestigen ✓</button>
-    </div>
-  </div>
-</div>
+app.post('/index-products-clip', async (req, res) => {
+  try {
+    const { offset = 0, limit = 20 } = req.body || {};
+    let allProducts = [];
+    let url = `https://${SHOP}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,variants,images,tags,status&status=active`;
+    while (url) {
+      const response = await fetch(url, { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } });
+      const data = await response.json();
+      allProducts = allProducts.concat(data.products || []);
+      const linkHeader = response.headers.get('Link');
+      const nextMatch = linkHeader && linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+      url = nextMatch ? nextMatch[1] : null;
+    }
+    const productsWithImages = allProducts.filter(p => p.images && p.images.length > 0);
+    const batch = productsWithImages.slice(offset, offset + limit);
+    let indexed = 0;
+    const errors = [];
+    const chunkSize = 10;
+    for (let i = 0; i < batch.length; i += chunkSize) {
+      const chunk = batch.slice(i, i + chunkSize);
+      try {
+        const imageUrls = chunk.map(p => p.images[0].src);
+        const embeddings = await getClipEmbeddingsBatch(imageUrls);
+        for (let j = 0; j < chunk.length; j++) {
+          try {
+            const product = chunk[j];
+            const embedding = embeddings[j]?.embedding;
+            if (!embedding) throw new Error('Geen embedding');
+            const stock = product.variants.reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+            const variant = product.variants[0] || {};
+            let artist = null, memberMeta = null, location = null;
+            try {
+              const metaResp = await fetch(
+                `https://${SHOP}/admin/api/2024-01/products/${product.id}/metafields.json?namespace=custom`,
+                { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } }
+              );
+              const metaData = await metaResp.json();
+              const metafields = metaData.metafields || [];
+              artist = metafields.find(m => m.key === 'artist')?.value || null;
+              memberMeta = metafields.find(m => m.key === 'member')?.value || null;
+              location = metafields.find(m => m.key === 'location')?.value || null;
+            } catch(e) {}
+            await supabase.from('product_embeddings_clip').upsert({
+              shopify_product_id: product.id,
+              shopify_variant_id: variant.id,
+              inventory_item_id: variant.inventory_item_id,
+              title: product.title,
+              image_url: product.images[0].src,
+              stock: stock,
+              embedding: embedding,
+              member: memberMeta,
+              album: product.title.trim(),
+              artist: artist,
+              handle: product.handle || null,
+              barcode: variant.barcode || null,
+              price: variant.price ? Math.round(parseFloat(variant.price)) : null,
+              sku: variant.sku || null,
+              status: product.status || null,
+              vendor: 'Poca Cafe',
+              location: location
+            }, { onConflict: 'shopify_product_id' });
+            indexed++;
+          } catch(e) { errors.push(`${chunk[j].title}: ${e.message}`); }
+        }
+        await new Promise(r => setTimeout(r, 5000));
+      } catch(e) { chunk.forEach(p => errors.push(`${p.title}: ${e.message}`)); }
+    }
+    res.json({ indexed, errors, total: productsWithImages.length, offset, next_offset: offset + limit, done: offset + limit >= productsWithImages.length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
-</body>
-</html>
+app.post('/search-clip', async (req, res) => {
+  try {
+    const { image_base64, media_type, filter_member, filter_album } = req.body;
+    const formData = new URLSearchParams();
+    formData.append('image', image_base64);
+    const uploadResp = await fetch(`https://api.imgbb.com/1/upload?key=${process.env.IMGBB_KEY}`, { method: 'POST', body: formData });
+    const uploadData = await uploadResp.json();
+    const imageUrl = uploadData.data.url;
+    const embeddings = await getClipEmbeddingsBatch([imageUrl]);
+    const embedding = embeddings[0]?.embedding;
+    if (!embedding) throw new Error('Geen embedding voor scan');
+    const { data, error } = await supabase.rpc('match_products_clip', {
+      query_embedding: embedding, match_threshold: 0.1, match_count: 5,
+      filter_member: filter_member || null, filter_album: filter_album || null
+    });
+    if (error) throw new Error(error.message);
+    res.json({ matches: data });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/filters', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('product_embeddings_clip').select('member, album').not('member', 'is', null);
+    if (error) throw new Error(error.message);
+    const members = [...new Set(data.map(r => r.member).filter(Boolean))].sort();
+    const albums = [...new Set(data.map(r => r.album).filter(Boolean))].sort();
+    res.json({ members, albums });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/enhance', async (req, res) => {
+  try {
+    const { image_base64 } = req.body;
+    if (!image_base64) return res.status(400).json({ error: 'image_base64 verplicht' });
+    const formData = new URLSearchParams();
+    formData.append('image', image_base64);
+    const uploadResp = await fetch(`https://api.imgbb.com/1/upload?key=${process.env.IMGBB_KEY}`, { method: 'POST', body: formData });
+    const uploadData = await uploadResp.json();
+    const imageUrl = uploadData.data.url;
+    const predResp = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: { 'Authorization': `Token ${process.env.REPLICATE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'wait' },
+      body: JSON.stringify({ version: '0fbacf7afc6c144e5be9767cff80f25aff23e52b0708f17e20f9879b2f21516c', input: { img: imageUrl, scale: 1, version: 'v1.4' } })
+    });
+    const pred = await predResp.json();
+    if (pred.error) throw new Error('GFPGAN fout: ' + pred.error);
+    if (!pred.output) throw new Error('Geen output van GFPGAN');
+    const imgResp = await fetch(pred.output);
+    const buffer = await imgResp.buffer();
+    res.json({ enhanced_base64: buffer.toString('base64'), media_type: 'image/png' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// CSV opslaan in geheugen en directe download URL teruggeven
+// Product info bulk ophalen uit Supabase
+app.post('/product-info-bulk', async (req, res) => {
+  try {
+    const { product_ids } = req.body;
+    if (!product_ids || !product_ids.length) return res.json({ products: [] });
+    const { data, error } = await supabase
+      .from('product_embeddings_clip')
+      .select('shopify_product_id, handle, title, member, artist, location, barcode, sku, price, status, image_url')
+      .in('shopify_product_id', product_ids);
+    if (error) throw new Error(error.message);
+    res.json({ products: data });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+const csvStore = new Map();
+
+app.post('/store-csv', (req, res) => {
+  const { csv, filename } = req.body;
+  if (!csv) return res.status(400).json({ error: 'csv verplicht' });
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  csvStore.set(id, { csv, filename: filename || 'export.csv' });
+  // Verwijder na 5 minuten
+  setTimeout(() => csvStore.delete(id), 5 * 60 * 1000);
+  res.json({ url: `https://poca-proxy.onrender.com/csv/${id}` });
+});
+
+app.get('/csv/:id', (req, res) => {
+  const entry = csvStore.get(req.params.id);
+  if (!entry) return res.status(404).send('CSV niet gevonden of verlopen');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${entry.filename}"`);
+  res.send(entry.csv);
+});
+
+// CSV download route
+app.post('/download-csv', (req, res) => {
+  const { csv, filename } = req.body;
+  if (!csv) return res.status(400).json({ error: 'csv verplicht' });
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename || 'export.csv'}"`);
+  res.send(csv);
+});
+
+const MEMBER_PREFIX = {
+  'HONGJOONG': 'ATZ01', 'SEONGHWA': 'ATZ02', 'YUNHO': 'ATZ03', 'YEOSANG': 'ATZ04',
+  'SAN': 'ATZ05', 'MINGI': 'ATZ06', 'WOOYOUNG': 'ATZ07', 'JONGHO': 'ATZ08', 'UNIT': 'ATZ99',
+  'BANG CHAN': 'SKZ01', 'BANGCHAN': 'SKZ01', 'LEE KNOW': 'SKZ02', 'LEEKNOW': 'SKZ02',
+  'CHANGBIN': 'SKZ03', 'HYUNJIN': 'SKZ04', 'HAN': 'SKZ05', 'FELIX': 'SKZ06',
+  'SEUNGMIN': 'SKZ07', 'IN': 'SKZ08',
+  'RM': 'BTS01', 'JIN': 'BTS02', 'SUGA': 'BTS03', 'JHOPE': 'BTS04',
+  'JIMIN': 'BTS05', 'V': 'BTS06', 'JUNGKOOK': 'BTS07',
+  'JUNGWON': 'ENH01', 'HEESEUNG': 'ENH02', 'JAY': 'ENH03', 'JAKE': 'ENH04',
+  'SUNGHOON': 'ENH05', 'SUNOO': 'ENH06', 'NI-KI': 'ENH07'
+};
+
+app.post('/next-product-info', async (req, res) => {
+  try {
+    const { member } = req.body;
+    if (!member) return res.status(400).json({ error: 'member verplicht' });
+    const memberKey = member.toUpperCase().trim();
+    const prefix = MEMBER_PREFIX[memberKey];
+    if (!prefix) return res.json({ location: null, handle: null, error: 'Geen prefix gevonden voor ' + member });
+
+    // Locatie — alfabetisch sorteren werkt hier omdat het zero-padded is
+    const { data: locData } = await supabase.from('product_embeddings_clip').select('location').like('location', prefix + '-%').order('location', { ascending: false }).limit(1);
+    let nextLocNum = 1;
+    if (locData && locData.length > 0 && locData[0].location) {
+      const parts = locData[0].location.split('-');
+      if (parts[1]) nextLocNum = parseInt(parts[1]) + 1;
+    }
+    const location = prefix + '-' + String(nextLocNum).padStart(5, '0');
+
+    // Handle — numeriek sorteren
+    const handleBase = member.toLowerCase().trim().replace(/\s+/g, '-');
+    const { data: handleData } = await supabase.from('product_embeddings_clip').select('handle').like('handle', handleBase + '-%');
+    let nextHandleNum = 1;
+    if (handleData && handleData.length > 0) {
+      const nums = handleData.map(r => parseInt(r.handle.split('-').pop())).filter(n => !isNaN(n));
+      if (nums.length > 0) nextHandleNum = Math.max(...nums) + 1;
+    }
+    const handle = handleBase + '-' + nextHandleNum;
+
+    res.json({ location, handle, prefix });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Server-side SKU teller — garandeert unieke SKUs ook bij bulk aanmaken
+let skuCounter = null;
+
+app.post('/next-sku', async (req, res) => {
+  try {
+    if (skuCounter === null) {
+      const { data } = await supabase
+        .from('product_embeddings_clip')
+        .select('sku')
+        .not('sku', 'is', null)
+        .order('sku', { ascending: false })
+        .limit(1);
+      skuCounter = data?.[0]?.sku ? parseInt(data[0].sku) + 1 : 1;
+    }
+    const sku = String(skuCounter).padStart(6, '0');
+    skuCounter++;
+    res.json({ sku });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/next-location', async (req, res) => {
+  const { member } = req.body;
+  return fetch('http://localhost:3000/next-product-info', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ member })
+  }).then(r => r.json()).then(data => res.json(data)).catch(e => res.status(500).json({ error: e.message }));
+});
+
+app.post('/index-single', async (req, res) => {
+  try {
+    const { product_id } = req.body;
+    if (!product_id) return res.status(400).json({ error: 'product_id verplicht' });
+    const response = await fetch(`https://${SHOP}/admin/api/2024-01/products/${product_id}.json`, { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } });
+    const data = await response.json();
+    if (!data.product) throw new Error('Product niet gevonden');
+    await indexSingleProduct(data.product);
+    res.json({ success: true, title: data.product.title });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/webhook/product', async (req, res) => {
+  try {
+    const hmac = req.headers['x-shopify-hmac-sha256'];
+    if (WEBHOOK_SECRET && hmac) {
+      const hash = crypto.createHmac('sha256', WEBHOOK_SECRET).update(req.body).digest('base64');
+      if (hash !== hmac) return res.status(401).send('Unauthorized');
+    }
+    const product = JSON.parse(req.body);
+    res.sendStatus(200);
+    indexSingleProduct(product).catch(e => console.error('Webhook index fout:', e.message));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/update-metadata', async (req, res) => {
+  try {
+    let allProducts = [];
+    let url = `https://${SHOP}/admin/api/2024-01/products.json?limit=250&fields=id,title&status=active`;
+    while (url) {
+      const response = await fetch(url, { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } });
+      const data = await response.json();
+      allProducts = allProducts.concat(data.products || []);
+      const linkHeader = response.headers.get('Link');
+      const nextMatch = linkHeader && linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+      url = nextMatch ? nextMatch[1] : null;
+    }
+    let updated = 0;
+    const errors = [];
+    for (const product of allProducts) {
+      try {
+        const metaResp = await fetch(`https://${SHOP}/admin/api/2024-01/products/${product.id}/metafields.json?namespace=custom&key=member`, { headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN } });
+        const metaData = await metaResp.json();
+        const member = metaData.metafields?.[0]?.value || null;
+        await supabase.from('product_embeddings_clip').update({ member: member, album: product.title.trim() }).eq('shopify_product_id', product.id);
+        updated++;
+      } catch(e) { errors.push(`${product.title}: ${e.message}`); }
+    }
+    res.json({ updated, total: allProducts.length, errors });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/webhook/product-delete', async (req, res) => {
+  try {
+    const product = JSON.parse(req.body);
+    res.sendStatus(200);
+    await supabase.from('product_embeddings_clip').delete().eq('shopify_product_id', product.id);
+  } catch(e) { console.error('Webhook delete fout:', e.message); }
+});
+
+app.listen(3000, () => console.log('Proxy running'));
