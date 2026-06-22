@@ -756,6 +756,12 @@ async function saveAll() {
   let saved = 0;
   for (const r of toSave) {
     try {
+      // EERST product ophalen voor delta berekening
+      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
+      const productData = await productResp.json();
+      const oldStock = productData.product?.variants?.[0]?.inventory_quantity || 0;
+
+      // DAN inventory updaten
       const locResp = await fetch(PROXY + '/shopify/inventory_levels.json?inventory_item_ids=' + r.selectedInventoryItemId);
       const locData = await locResp.json();
       const locationId = locData.inventory_levels?.[0]?.location_id;
@@ -765,13 +771,9 @@ async function saveAll() {
         body: JSON.stringify({ location_id: locationId, inventory_item_id: r.selectedInventoryItemId, available: r.newStock })
       });
 
-      // Haal product details op voor CSV — sla oude stock op voor delta berekening
-      const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
-      const productData = await productResp.json();
       if (productData.product) {
-        const oldStock = productData.product.variants?.[0]?.inventory_quantity || 0;
         const delta = r.newStock - oldStock;
-        savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta: delta > 0 ? delta : r.newStock });
+        if (delta !== 0) savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta });
       }
 
       saved++; btn.textContent = saved + ' of ' + toSave.length + ' saved...';
@@ -780,6 +782,10 @@ async function saveAll() {
   showToast('✓ ' + saved + ' products updated in Shopify!');
   btn.disabled = false; btn.textContent = 'Save all to Shopify';
 
+  if (savedProductsForCSV.length > 0) {
+    document.getElementById('csvBtn').style.display = 'block';
+  }
+}
   // Toon CSV knop als er producten zijn opgeslagen
   if (savedProductsForCSV.length > 0) {
     document.getElementById('csvBtn').style.display = 'block';
