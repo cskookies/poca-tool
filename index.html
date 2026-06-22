@@ -114,6 +114,12 @@
     <h1>Poca Stock Tool</h1>
     <p class="subtitle">Scan your photocards → AI matches → update stock in bulk</p>
   </div>
+  <div style="margin-bottom:1rem;display:flex;align-items:center;gap:10px">
+    <label style="font-size:13px;color:#555;white-space:nowrap;font-weight:500">Member (alle nieuwe):</label>
+    <select id="sessionMemberSelect" style="flex:1;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;background:#fff">
+      <option value="">— niet instellen —</option>
+    </select>
+  </div>
   <div class="upload-zone" id="dropzone" onclick="document.getElementById('fileInput').click()">
     <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     <p>Select your scanned photocards</p>
@@ -146,6 +152,12 @@ const sessionNextNum = {};
 
 fetch(PROXY + '/filters').then(r => r.json()).then(data => {
   allMembers = data.members || [];
+  const sel = document.getElementById('sessionMemberSelect');
+  if (sel) allMembers.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
 }).catch(() => {});
 
 const dropzone = document.getElementById('dropzone');
@@ -456,9 +468,10 @@ async function confirmCrop() {
   if (panel && !panel.classList.contains('open')) {
     panel.classList.add('open');
 
-    // Auto-detect member
+    // Auto-detect member (sessie member heeft voorrang)
     const memberField = document.getElementById('new-member-' + ri);
-    const detectedMember = detectMemberFromMatches(ri);
+    const sessionMember = document.getElementById('sessionMemberSelect')?.value;
+    const detectedMember = sessionMember || detectMemberFromMatches(ri);
     if (detectedMember && memberField && !memberField.value) {
       memberField.value = detectedMember;
       fetchLocation(ri);
