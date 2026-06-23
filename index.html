@@ -150,15 +150,21 @@ let files = [], matchResults = [], allMembers = [];
 // Sessie tracker — alleen verhoogd na succesvol aanmaken product
 const sessionNextNum = {};
 
-fetch(PROXY + '/filters').then(r => r.json()).then(data => {
-  allMembers = data.members || [];
-  const sel = document.getElementById('sessionMemberSelect');
-  if (sel) allMembers.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m; opt.textContent = m;
-    sel.appendChild(opt);
-  });
-}).catch(() => {});
+async function loadFilters(attempt = 0) {
+  try {
+    const data = await fetch(PROXY + '/filters').then(r => r.json());
+    allMembers = data.members || [];
+    const sel = document.getElementById('sessionMemberSelect');
+    if (sel) allMembers.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    });
+  } catch(e) {
+    if (attempt < 3) setTimeout(() => loadFilters(attempt + 1), 3000);
+  }
+}
+loadFilters();
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
