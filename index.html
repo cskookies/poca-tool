@@ -301,7 +301,7 @@ function renderResults() {
       '<button class="refine-search-btn" onclick="doRefine(' + ri + ')">Search again</button></div>';
 
     const newProductPanel = '<div class="new-product-panel' + (r.showingNewProduct ? ' open' : '') + '" id="new-product-' + ri + '">' +
-      '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM">' +
+      '<div id="biasroom-matches-' + ri + '" style="margin-bottom:12px;display:none">' + '<p style="font-size:11px;color:#bbb;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Biasroom matches</p>' + '<div id="biasroom-list-' + ri + '" style="display:flex;flex-direction:column;gap:6px"></div></div>' + '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM">' +
       '<label>Artist</label><input type="text" id="new-artist-' + ri + '" placeholder="e.g. ATEEZ">' +
       '<label>Member</label><input type="text" id="new-member-' + ri + '" placeholder="e.g. HONGJOONG" oninput="fetchLocation(' + ri + ')">' +
       '<label>Location</label><input type="text" id="new-location-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
@@ -468,6 +468,7 @@ async function confirmCrop() {
   if (scanImg) scanImg.src = dataUrl;
 
   closeCropModal();
+ fetchBiasroomMatches(ri);
 
   // Open new product panel + auto-fill
   const panel = document.getElementById('new-product-' + ri);
@@ -496,6 +497,60 @@ async function confirmCrop() {
     }
   }
 }
+
+ async function fetchBiasroomMatches(ri) {
+  const r = matchResults[ri];
+  const matchesDiv = document.getElementById('biasroom-matches-' + ri);
+  const listDiv = document.getElementById('biasroom-list-' + ri);
+  if (!matchesDiv || !listDiv) return;
+  
+  matchesDiv.style.display = 'block';
+  listDiv.innerHTML = '<p style="font-size:12px;color:#aaa">Zoeken...</p>';
+  
+  try {
+    const resp = await fetch(PROXY + '/match-photocard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: r.base64, media_type: r.mediaType })
+    });
+    const data = await resp.json();
+    const matches = data.matches || [];
+    
+    if (!matches.length) {
+      listDiv.innerHTML = '<p style="font-size:12px;color:#aaa">Geen matches gevonden</p>';
+      return;
+    }
+    
+    listDiv.innerHTML = matches.slice(0, 3).map((m, idx) =>
+      '<div onclick="selectBiasroomMatch(' + ri + ',' + idx + ')" style="display:flex;align-items:center;gap:8px;padding:6px;border:1.5px solid #eee;border-radius:8px;cursor:pointer;background:#fff" id="br-match-' + ri + '-' + idx + '" data-name="' + m.name.replace(/"/g, '&quot;') + '" data-member="' + (m.member||'').replace(/"/g, '&quot;') + '" data-album="' + (m.album||'').replace(/"/g, '&quot;') + '" data-group="' + (m.group_name||'').replace(/"/g, '&quot;') + '">' +
+      '<img src="' + m.image_url + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display=\'none\'">' +
+      '<div style="flex:1;min-width:0">' +
+      '<p style="font-size:12px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.name + '</p>' +
+      '<p style="font-size:11px;color:#888">' + (m.member||'') + ' · ' + Math.round((m.similarity||0)*100) + '% match</p>' +
+      '</div></div>'
+    ).join('');
+  } catch(e) {
+    listDiv.innerHTML = '<p style="font-size:12px;color:#c62828">Fout: ' + e.message + '</p>';
+  }
+}
+
+window.selectBiasroomMatch = function(ri, idx) {
+  const el = document.getElementById('br-match-' + ri + '-' + idx);
+  if (!el) return;
+  
+  // Highlight geselecteerde
+  document.querySelectorAll('[id^="br-match-' + ri + '-"]').forEach(e => e.style.borderColor = '#eee');
+  el.style.borderColor = '#7c3aed';
+  
+  // Vul velden in
+  const titleField = document.getElementById('new-title-' + ri);
+  const memberField = document.getElementById('new-member-' + ri);
+  const artistField = document.getElementById('new-artist-' + ri);
+  
+  if (titleField) titleField.value = el.dataset.name;
+  if (memberField) { memberField.value = el.dataset.member; fetchLocation(ri); }
+  if (artistField) artistField.value = el.dataset.group;
+};
 
 window.toggleNewProduct = function(ri) {
   const panel = document.getElementById('new-product-' + ri);
