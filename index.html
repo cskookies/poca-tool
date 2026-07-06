@@ -523,7 +523,7 @@ async function confirmCrop() {
     
     listDiv.innerHTML = matches.slice(0, 3).map((m, idx) =>
       '<div onclick="selectBiasroomMatch(' + ri + ',' + idx + ')" style="display:flex;align-items:center;gap:8px;padding:6px;border:1.5px solid #eee;border-radius:8px;cursor:pointer;background:#fff" id="br-match-' + ri + '-' + idx + '" data-name="' + m.name.replace(/"/g, '&quot;') + '" data-member="' + (m.member||'').replace(/"/g, '&quot;') + '" data-album="' + (m.album||'').replace(/"/g, '&quot;') + '" data-group="' + (m.group_name||'').replace(/"/g, '&quot;') + '">' +
-      '<img src="' + m.image_url + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display=\'none\'">' +
+      '<img src="' + m.image_url + '" onclick="event.stopPropagation();showBiasroomPreview(\'' + m.image_url + '\')" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in" onerror="this.style.display=\'none\'">' +
       '<div style="flex:1;min-width:0">' +
       '<p style="font-size:12px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.name + '</p>' +
       '<p style="font-size:11px;color:#888">' + (m.member||'') + ' · ' + Math.round((m.similarity||0)*100) + '% match</p>' +
@@ -550,6 +550,17 @@ window.selectBiasroomMatch = function(ri, idx) {
   if (titleField) titleField.value = el.dataset.name;
   if (memberField) { memberField.value = el.dataset.member; fetchLocation(ri); }
   if (artistField) artistField.value = el.dataset.group;
+
+ window.showBiasroomPreview = function(url) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out';
+  overlay.onclick = () => overlay.remove();
+  const img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'max-width:90vw;max-height:90vh;object-fit:contain;border-radius:12px';
+  overlay.appendChild(img);
+  document.body.appendChild(overlay);
+};
 };
 
 window.toggleNewProduct = function(ri) {
