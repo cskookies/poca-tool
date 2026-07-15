@@ -142,14 +142,14 @@
   <button class="save-all-btn" id="csvBtn" style="display:none;background:#1565c0;margin-top:8px" onclick="downloadBarcodeCSV()">📄 Download barcodes CSV</button>
 </div>
 <div class="toast" id="toast"></div>
-
 <script>
 const PROXY = 'https://poca-proxy.onrender.com';
 let files = [], matchResults = [], allMembers = [];
-
 // Sessie tracker — alleen verhoogd na succesvol aanmaken product
 const sessionNextNum = {};
-
+// Race-condition guard: elke fetchLocation-aanroep krijgt een oplopend token per ri,
+// zodat een trage/oude respons een nieuwere niet meer kan overschrijven.
+const fetchLocationToken = {};
 async function loadFilters(attempt = 0) {
   try {
     const data = await fetch(PROXY + '/filters').then(r => r.json());
@@ -165,19 +165,16 @@ async function loadFilters(attempt = 0) {
   }
 }
 loadFilters();
-
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
 dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); addFiles(Array.from(e.dataTransfer.files)); });
 fileInput.addEventListener('change', () => { addFiles(Array.from(fileInput.files)); fileInput.value = ''; });
-
 function addFiles(newFiles) {
   newFiles.forEach(f => { if (f.type.startsWith('image/')) files.push(f); });
   renderQueue();
 }
-
 function renderQueue() {
   const section = document.getElementById('queueSection');
   const grid = document.getElementById('queueGrid');
@@ -195,9 +192,7 @@ function renderQueue() {
     grid.appendChild(div);
   });
 }
-
 function removeFile(i) { files.splice(i, 1); renderQueue(); }
-
 function toBase64(file) {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -206,7 +201,26 @@ function toBase64(file) {
     r.readAsDataURL(file);
   });
 }
-
+// FIX: render de volledige (ongecropte) foto via canvas zodat EXIF-rotatie van de telefoon
+// altijd correct wordt toegepast. Canvas-tekenen via <img> corrigeert rotatie automatisch en
+// de output heeft geen EXIF meer — dus de matcher-server kan 'm niet fout interpreteren.
+function normalizeOrientation(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(objUrl);
+      resolve(canvas.toDataURL('image/png').split(',')[1]);
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(objUrl); reject(e); };
+    img.src = objUrl;
+  });
+}
 async function searchClip(base64, mediaType, filterMember) {
   const resp = await fetch(PROXY + '/search-clip', {
     method: 'POST',
@@ -217,7 +231,6 @@ async function searchClip(base64, mediaType, filterMember) {
   if (data.error) throw new Error(data.error);
   return data.matches || [];
 }
-
 async function startBatch() {
   if (!files.length) return;
   const btn = document.getElementById('startBtn');
@@ -227,21 +240,23 @@ async function startBatch() {
   document.getElementById('results').innerHTML = '';
   document.getElementById('saveAllBtn').style.display = 'none';
   matchResults = [];
-
   for (let i = 0; i < files.length; i++) {
     setDot(i, 'processing');
     updateProgress(i, files.length);
     try {
       const b64 = await toBase64(files[i]);
       const url = URL.createObjectURL(files[i]);
+      const normalizedRaw = await normalizeOrientation(files[i]); // FIX: EXIF-correcte volledige foto voor Biasroom
       const matches = await searchClip(b64, files[i].type, null);
       const best = matches[0] || null;
       matchResults.push({
         index: i, filename: files[i].name, base64: b64, mediaType: files[i].type,
+        rawScanBase64: normalizedRaw, rawScanMediaType: 'image/png',
         best, alternatives: matches.slice(1, 4), url,
         skipped: !best, showingNewProduct: false,
         newStock: best ? best.stock : 0,
-        selectedInventoryItemId: best ? best.inventory_item_id : null
+        selectedInventoryItemId: best ? best.inventory_item_id : null,
+        newProductForm: { title: '', artist: '', member: '', location: '', handle: '', price: '3.00', stock: '1', draft: true }
       });
       setDot(i, best ? 'done' : 'error');
     } catch(e) {
@@ -249,40 +264,41 @@ async function startBatch() {
       matchResults.push({
         index: i, filename: files[i].name, base64: null, mediaType: files[i].type,
         best: null, alternatives: [], url, skipped: true, showingNewProduct: false,
-        newStock: 0, selectedInventoryItemId: null, error: e.message
+        newStock: 0, selectedInventoryItemId: null, error: e.message,
+        newProductForm: { title: '', artist: '', member: '', location: '', handle: '', price: '3.00', stock: '1', draft: true }
       });
       setDot(i, 'error');
     }
     renderResults();
   }
-
   updateProgress(files.length, files.length);
   document.getElementById('progressLabel').textContent = 'Done!';
   document.getElementById('saveAllBtn').style.display = 'block';
   btn.disabled = false;
   btn.textContent = 'Re-match';
 }
-
 function setDot(i, status) {
   const dot = document.getElementById('dot-' + i);
   if (dot) dot.className = 'status-dot ' + status;
 }
-
 function updateProgress(done, total) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   document.getElementById('progressBar').style.width = pct + '%';
   document.getElementById('progressLabel').textContent = done + ' of ' + total + ' processed...';
 }
-
 function isDuplicate(ri) {
   const r = matchResults[ri];
   if (!r.selectedInventoryItemId) return false;
   return matchResults.some((other, i) => i !== ri && other.selectedInventoryItemId === r.selectedInventoryItemId);
 }
-
 function similarityLabel(sim) { return sim >= 0.7 ? 'high' : sim >= 0.5 ? 'medium' : 'low'; }
 function similarityText(sim) { return sim >= 0.7 ? 'High confidence' : sim >= 0.5 ? 'Medium confidence' : 'Low confidence'; }
-
+function escAttr(v) { return (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+window.saveNewProductField = function(ri, field, value) {
+  if (!matchResults[ri]) return;
+  if (!matchResults[ri].newProductForm) matchResults[ri].newProductForm = {};
+  matchResults[ri].newProductForm[field] = value;
+};
 function renderResults() {
   const container = document.getElementById('results');
   container.innerHTML = '';
@@ -293,27 +309,24 @@ function renderResults() {
     const dup = isDuplicate(ri);
     card.className = 'result-card' + (r.best && !r.skipped ? ' confirmed' : '') + (isSkipped ? ' skipped' : '') + (dup ? ' duplicate' : '');
     card.id = 'card-' + ri;
-
     const memberOptions = '<option value="">All members</option>' + allMembers.map(m => '<option value="' + m + '">' + m + '</option>').join('');
-
     const refinePanel = '<div class="refine-panel" id="refine-' + ri + '">' +
       '<label>Member</label><select id="refine-member-' + ri + '">' + memberOptions + '</select>' +
       '<button class="refine-search-btn" onclick="doRefine(' + ri + ')">Search again</button></div>';
-
+    const npf = r.newProductForm || (r.newProductForm = { title: '', artist: '', member: '', location: '', handle: '', price: '3.00', stock: '1', draft: true });
     const newProductPanel = '<div class="new-product-panel' + (r.showingNewProduct ? ' open' : '') + '" id="new-product-' + ri + '">' +
-      '<div id="biasroom-matches-' + ri + '" style="margin-bottom:12px;display:none">' + '<p style="font-size:11px;color:#bbb;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Biasroom matches</p>' + '<div id="biasroom-list-' + ri + '" style="display:flex;flex-direction:column;gap:6px"></div></div>' + '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM">' +
-      '<label>Artist</label><input type="text" id="new-artist-' + ri + '" placeholder="e.g. ATEEZ">' +
-      '<label>Member</label><input type="text" id="new-member-' + ri + '" placeholder="e.g. HONGJOONG" oninput="fetchLocation(' + ri + ')">' +
-      '<label>Location</label><input type="text" id="new-location-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
-      '<label>Handle</label><input type="text" id="new-handle-' + ri + '" placeholder="Wordt automatisch ingevuld...">' +
-      '<label>Price (EUR)</label><input type="number" id="new-price-' + ri + '" placeholder="3.00" step="0.01" min="0" value="3.00">' +
-      '<label>Stock</label><input type="number" id="new-stock-' + ri + '" placeholder="1" min="0" value="1">' +
+      '<div id="biasroom-matches-' + ri + '" style="margin-bottom:12px;display:none">' + '<p style="font-size:11px;color:#bbb;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Biasroom matches</p>' + '<div id="biasroom-list-' + ri + '" style="display:flex;flex-direction:column;gap:6px"></div></div>' + '<label>Product name</label><input type="text" id="new-title-' + ri + '" placeholder="e.g. GOLDEN HOUR PART 1 TOKTOQ POCA ALBUM" value="' + escAttr(npf.title) + '" oninput="saveNewProductField(' + ri + ',\'title\',this.value)">' +
+      '<label>Artist</label><input type="text" id="new-artist-' + ri + '" placeholder="e.g. ATEEZ" value="' + escAttr(npf.artist) + '" oninput="saveNewProductField(' + ri + ',\'artist\',this.value)">' +
+      '<label>Member</label><input type="text" id="new-member-' + ri + '" placeholder="e.g. HONGJOONG" value="' + escAttr(npf.member) + '" oninput="saveNewProductField(' + ri + ',\'member\',this.value); fetchLocation(' + ri + ')">' +
+      '<label>Location</label><input type="text" id="new-location-' + ri + '" placeholder="Wordt automatisch ingevuld..." value="' + escAttr(npf.location) + '" oninput="saveNewProductField(' + ri + ',\'location\',this.value)">' +
+      '<label>Handle</label><input type="text" id="new-handle-' + ri + '" placeholder="Wordt automatisch ingevuld..." value="' + escAttr(npf.handle) + '" oninput="saveNewProductField(' + ri + ',\'handle\',this.value)">' +
+      '<label>Price (EUR)</label><input type="number" id="new-price-' + ri + '" placeholder="3.00" step="0.01" min="0" value="' + escAttr(npf.price) + '" oninput="saveNewProductField(' + ri + ',\'price\',this.value)">' +
+      '<label>Stock</label><input type="number" id="new-stock-' + ri + '" placeholder="1" min="0" value="' + escAttr(npf.stock) + '" oninput="saveNewProductField(' + ri + ',\'stock\',this.value)">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-      '<input type="checkbox" id="new-draft-' + ri + '" checked>' +
+      '<input type="checkbox" id="new-draft-' + ri + '"' + (npf.draft ? ' checked' : '') + ' onchange="saveNewProductField(' + ri + ',\'draft\',this.checked)">' +
       '<label style="margin:0;font-size:13px;color:#555">Als draft opslaan</label></div>' +
       '<button class="create-btn" onclick="createProduct(' + ri + ')">Create product in Shopify</button>' +
       '<div id="new-product-msg-' + ri + '"></div></div>';
-
     const altsHtml = r.alternatives && r.alternatives.length ? (
       '<div class="alts"><p class="alts-label">Other possible matches</p>' +
       r.alternatives.map(a =>
@@ -323,9 +336,7 @@ function renderResults() {
         '<span class="alt-stock">' + Math.round((a.similarity || 0) * 100) + '% · ' + a.stock + ' pcs.</span></div>'
       ).join('') + '</div>'
     ) : '';
-
     const dupBadge = dup ? ' <span class="badge duplicate">⚠️ Duplicate</span>' : '';
-
     if (!r.best) {
       card.innerHTML =
         '<div class="result-top"><img class="scan-thumb" id="scan-img-' + ri + '" src="' + r.url + '" alt="">' +
@@ -360,17 +371,13 @@ function renderResults() {
     container.appendChild(card);
   });
 }
-
-// ── Crop modal ──────────────────────────────────────────────
 const CARD_W = 661, CARD_H = 1051;
 let cropState = { ri: null, scale: 1, offsetX: 0, offsetY: 0, dragging: false, lastX: 0, lastY: 0 };
-
 function adjustZoom(delta) {
   const slider = document.getElementById('cropZoom');
   slider.value = Math.min(parseInt(slider.max), Math.max(parseInt(slider.min), parseInt(slider.value) + delta));
   updateCrop();
 }
-
 function openCropModal(ri) {
   const r = matchResults[ri];
   cropState.ri = ri;
@@ -392,9 +399,7 @@ function openCropModal(ri) {
   document.getElementById('cropModal').style.display = 'flex';
   setupCropDrag();
 }
-
 function closeCropModal() { document.getElementById('cropModal').style.display = 'none'; }
-
 function updateCrop() {
   const zoom = parseInt(document.getElementById('cropZoom').value);
   cropState.scale = zoom / 100;
@@ -411,7 +416,6 @@ function updateCrop() {
   img.style.left = ((cw - iw) / 2 + cropState.offsetX) + 'px';
   img.style.top = ((ch - ih) / 2 + cropState.offsetY) + 'px';
 }
-
 function setupCropDrag() {
   const container = document.getElementById('cropContainer');
   container.onmousedown = (e) => { cropState.dragging = true; cropState.lastX = e.clientX; cropState.lastY = e.clientY; };
@@ -429,14 +433,12 @@ function setupCropDrag() {
   };
   container.ontouchend = () => { cropState.dragging = false; };
 }
-
 async function confirmCrop() {
   const ri = cropState.ri;
   const r = matchResults[ri];
   const container = document.getElementById('cropContainer');
   const img = document.getElementById('cropImg');
   const cw = container.clientWidth, ch = container.clientHeight;
-
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W; canvas.height = CARD_H;
   const ctx = canvas.getContext('2d');
@@ -451,14 +453,12 @@ async function confirmCrop() {
   ctx.lineTo(0, radius);
   ctx.quadraticCurveTo(0, 0, radius, 0);
   ctx.closePath(); ctx.clip();
-
   const displayScale = cw / CARD_W;
   const imgW = img.naturalWidth * cropState.scale;
   const imgH = img.naturalHeight * cropState.scale;
   const imgX = (cw - imgW) / 2 + cropState.offsetX;
   const imgY = (ch - imgH) / 2 + cropState.offsetY;
   ctx.drawImage(img, imgX / displayScale, imgY / displayScale, imgW / displayScale, imgH / displayScale);
-
   const dataUrl = canvas.toDataURL('image/png');
   r.base64 = dataUrl.split(',')[1];
   r.mediaType = 'image/png';
@@ -466,25 +466,20 @@ async function confirmCrop() {
   r.cropped = true;
   const scanImg = document.getElementById('scan-img-' + ri);
   if (scanImg) scanImg.src = dataUrl;
-
   closeCropModal();
  fetchBiasroomMatches(ri);
-
-  // Open new product panel + auto-fill
   const panel = document.getElementById('new-product-' + ri);
   if (panel && !panel.classList.contains('open')) {
     panel.classList.add('open');
-
-    // Auto-detect member (sessie member heeft voorrang)
+    r.showingNewProduct = true;
     const memberField = document.getElementById('new-member-' + ri);
     const sessionMember = document.getElementById('sessionMemberSelect')?.value;
     const detectedMember = sessionMember || detectMemberFromMatches(ri);
     if (detectedMember && memberField && !memberField.value) {
       memberField.value = detectedMember;
+      saveNewProductField(ri, 'member', detectedMember);
       fetchLocation(ri);
     }
-
-    // Auto-detect artist
     const artistField = document.getElementById('new-artist-' + ri);
     if (artistField && !artistField.value) {
       const allMatches = [r.best, ...(r.alternatives || [])].filter(Boolean);
@@ -493,34 +488,30 @@ async function confirmCrop() {
         const counts = {};
         artists.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
         artistField.value = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+        saveNewProductField(ri, 'artist', artistField.value);
       }
     }
   }
 }
-
  async function fetchBiasroomMatches(ri) {
   const r = matchResults[ri];
   const matchesDiv = document.getElementById('biasroom-matches-' + ri);
   const listDiv = document.getElementById('biasroom-list-' + ri);
   if (!matchesDiv || !listDiv) return;
-  
   matchesDiv.style.display = 'block';
   listDiv.innerHTML = '<p style="font-size:12px;color:#aaa">Zoeken...</p>';
-  
   try {
     const resp = await fetch(PROXY + '/match-photocard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: r.base64, media_type: r.mediaType })
+      body: JSON.stringify({ image_base64: r.rawScanBase64 || r.base64, media_type: r.rawScanMediaType || r.mediaType })
     });
     const data = await resp.json();
     const matches = data.matches || [];
-    
     if (!matches.length) {
       listDiv.innerHTML = '<p style="font-size:12px;color:#aaa">Geen matches gevonden</p>';
       return;
     }
-    
     listDiv.innerHTML = matches.slice(0, 3).map((m, idx) =>
       '<div onclick="selectBiasroomMatch(' + ri + ',' + idx + ')" style="display:flex;align-items:center;gap:8px;padding:6px;border:1.5px solid #eee;border-radius:8px;cursor:pointer;background:#fff" id="br-match-' + ri + '-' + idx + '" data-name="' + m.name.replace(/"/g, '&quot;') + '" data-member="' + (m.member||'').replace(/"/g, '&quot;') + '" data-album="' + (m.album||'').replace(/"/g, '&quot;') + '" data-group="' + (m.group_name||'').replace(/"/g, '&quot;') + '">' +
       '<img src="' + m.image_url + '" onclick="event.stopPropagation();showBiasroomPreview(\'' + m.image_url + '\')" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in" onerror="this.style.display=\'none\'">' +
@@ -533,25 +524,19 @@ async function confirmCrop() {
     listDiv.innerHTML = '<p style="font-size:12px;color:#c62828">Fout: ' + e.message + '</p>';
   }
 }
-
 window.selectBiasroomMatch = function(ri, idx) {
   const el = document.getElementById('br-match-' + ri + '-' + idx);
   if (!el) return;
-  
-  // Highlight geselecteerde
   document.querySelectorAll('[id^="br-match-' + ri + '-"]').forEach(e => e.style.borderColor = '#eee');
   el.style.borderColor = '#7c3aed';
-  
-  // Vul velden in
   const titleField = document.getElementById('new-title-' + ri);
   const memberField = document.getElementById('new-member-' + ri);
   const artistField = document.getElementById('new-artist-' + ri);
-  
-  if (titleField) titleField.value = el.dataset.name;
-  if (memberField) { memberField.value = el.dataset.member; fetchLocation(ri); }
-  if (artistField) artistField.value = el.dataset.group;
-
- window.showBiasroomPreview = function(url) {
+  if (titleField) { titleField.value = el.dataset.name; saveNewProductField(ri, 'title', el.dataset.name); }
+  if (memberField) { memberField.value = el.dataset.member; saveNewProductField(ri, 'member', el.dataset.member); fetchLocation(ri); }
+  if (artistField) { artistField.value = el.dataset.group; saveNewProductField(ri, 'artist', el.dataset.group); }
+};
+window.showBiasroomPreview = function(url) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out';
   overlay.onclick = () => overlay.remove();
@@ -561,8 +546,6 @@ window.selectBiasroomMatch = function(ri, idx) {
   overlay.appendChild(img);
   document.body.appendChild(overlay);
 };
-};
-
 window.toggleNewProduct = function(ri) {
   const panel = document.getElementById('new-product-' + ri);
   if (!panel) return;
@@ -571,11 +554,9 @@ window.toggleNewProduct = function(ri) {
     return;
   }
   panel.classList.toggle('open');
+  matchResults[ri].showingNewProduct = panel.classList.contains('open');
 };
-
-// ── Watermark ───────────────────────────────────────────────
 const WATERMARK_URL = PROXY + '/watermark.png';
-
 async function applyWatermark(base64, mediaType) {
   return new Promise((resolve, reject) => {
     const productImg = new Image();
@@ -601,13 +582,10 @@ async function applyWatermark(base64, mediaType) {
     watermarkImg.src = WATERMARK_URL;
   });
 }
-
-// ── Enhance ─────────────────────────────────────────────────
 window.enhanceCrop = async function() {
   const ri = cropState.ri;
   const btn = document.getElementById('cropEnhanceBtn');
   const r = matchResults[ri];
-
   if (r.enhanced) {
     r.enhanced = false;
     r.base64 = r.originalBase64; r.mediaType = r.originalMediaType;
@@ -619,7 +597,6 @@ window.enhanceCrop = async function() {
     document.getElementById('cropImg').src = 'data:image/png;base64,' + r.enhancedBase64;
     btn.textContent = '↩ Origineel'; return;
   }
-
   btn.textContent = '⏳ Bezig...'; btn.disabled = true;
   try {
     const resp = await fetch(PROXY + '/enhance', {
@@ -649,48 +626,53 @@ window.enhanceCrop = async function() {
     alert('Enhancement mislukt: ' + e.message);
   }
 };
-
-// ── fetchLocation — offset pas verhogen in createProduct ────
 window.fetchLocation = async function(ri) {
-  const member = document.getElementById('new-member-' + ri).value.trim();
+  const memberField = document.getElementById('new-member-' + ri);
+  const member = memberField.value.trim();
   const locationField = document.getElementById('new-location-' + ri);
   const handleField = document.getElementById('new-handle-' + ri);
-  if (!member || member.length < 2) {
+  if (!member) {
     locationField.value = ''; locationField.placeholder = 'Wordt automatisch ingevuld...';
     if (handleField) { handleField.value = ''; handleField.placeholder = 'Wordt automatisch ingevuld...'; }
+    saveNewProductField(ri, 'location', ''); saveNewProductField(ri, 'handle', '');
     return;
   }
+  const myToken = (fetchLocationToken[ri] = (fetchLocationToken[ri] || 0) + 1);
   locationField.placeholder = 'Ophalen...'; locationField.value = '';
   if (handleField) { handleField.placeholder = 'Ophalen...'; handleField.value = ''; }
   try {
+    // FIX: artiest meesturen zodat de server "UNIT" per groep kan onderscheiden
+    // (anders komt elke groep se unit-kaart op ATEEZ' ATZ99 prefix terecht).
+    const artistField = document.getElementById('new-artist-' + ri);
+    const artist = artistField ? artistField.value.trim() : '';
     const resp = await fetch(PROXY + '/next-product-info', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member })
+      body: JSON.stringify({ member, artist })
     });
     const data = await resp.json();
+    if (fetchLocationToken[ri] !== myToken || memberField.value.trim() !== member) return;
     if (data.location && data.prefix) {
       const prefix = data.prefix;
       const baseLocNum = parseInt(data.location.split('-')[1]);
-      // Initialiseer sessie teller als nog niet bestaat
       if (sessionNextNum[prefix] === undefined) sessionNextNum[prefix] = baseLocNum;
       locationField.value = prefix + '-' + String(sessionNextNum[prefix]).padStart(5, '0');
-
+      saveNewProductField(ri, 'location', locationField.value);
       if (data.handle && handleField) {
         const handleBase = data.handle.split('-').slice(0, -1).join('-');
         const baseHandleNum = parseInt(data.handle.split('-').pop());
         const hKey = 'h_' + handleBase;
         if (sessionNextNum[hKey] === undefined) sessionNextNum[hKey] = baseHandleNum;
         handleField.value = handleBase + '-' + sessionNextNum[hKey];
+        saveNewProductField(ri, 'handle', handleField.value);
       }
-      // SKU niet meer hier ophalen — wordt in createProduct aangevraagd
     } else {
       locationField.placeholder = 'Geen prefix gevonden voor ' + member;
     }
   } catch(e) {
+    if (fetchLocationToken[ri] !== myToken) return;
     locationField.placeholder = 'Fout bij ophalen';
   }
 };
-
 function detectMemberFromMatches(ri) {
   const r = matchResults[ri];
   const allMatches = [];
@@ -702,7 +684,6 @@ function detectMemberFromMatches(ri) {
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   return top[1] >= Math.ceil(allMatches.length / 2) ? top[0] : null;
 }
-
 window.createProduct = async function(ri) {
   const title = document.getElementById('new-title-' + ri).value.trim();
   const artist = document.getElementById('new-artist-' + ri).value.trim();
@@ -713,31 +694,23 @@ window.createProduct = async function(ri) {
   const stock = parseInt(document.getElementById('new-stock-' + ri).value) || 0;
   const isDraft = document.getElementById('new-draft-' + ri).checked;
   const r = matchResults[ri];
-
   if (!title) { alert('Please enter a product name'); return; }
-
   const btn = document.querySelector('#new-product-' + ri + ' .create-btn');
   btn.disabled = true; btn.textContent = 'Watermark toevoegen...';
-
   try {
     const watermarkedBase64 = await applyWatermark(r.base64, r.mediaType);
     btn.textContent = 'Creating...';
-
-    // Haal SKU op vlak voor aanmaken — server-side teller garandeert uniciteit
     const skuResp = await fetch(PROXY + '/next-sku', { method: 'POST' });
     const skuData = await skuResp.json();
     const nextSku = skuData.sku || undefined;
-
     const toTitleCase = str => str.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
     const tagsArr = ['Photocards'];
     if (artist) tagsArr.push(toTitleCase(artist));
     if (member) tagsArr.push(toTitleCase(member));
-
     const metafields = [];
     if (artist) metafields.push({ namespace: 'custom', key: 'artist', value: artist, type: 'single_line_text_field' });
     if (member) metafields.push({ namespace: 'custom', key: 'member', value: member, type: 'single_line_text_field' });
     if (location) metafields.push({ namespace: 'custom', key: 'location', value: location, type: 'single_line_text_field' });
-
     const productResp = await fetch(PROXY + '/shopify/products.json', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -751,11 +724,8 @@ window.createProduct = async function(ri) {
         }
       })
     });
-
     const productData = await productResp.json();
     if (productData.errors) throw new Error(JSON.stringify(productData.errors));
-
-    // ✅ Verhoog sessie tellers NA succesvol aanmaken
     if (location) {
       const prefix = location.split('-')[0];
       if (sessionNextNum[prefix] !== undefined) sessionNextNum[prefix]++;
@@ -765,17 +735,13 @@ window.createProduct = async function(ri) {
       const hKey = 'h_' + hBase;
       if (sessionNextNum[hKey] !== undefined) sessionNextNum[hKey]++;
     }
-
     btn.textContent = 'Indexing...';
     fetch(PROXY + '/index-single', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ product_id: productData.product.id })
     }).catch(e => console.warn('Index fout:', e.message));
-
-    // Bewaar product ID voor CSV export
     r.createdProductId = productData.product.id;
     document.getElementById('csvBtn').style.display = 'block';
-
     document.getElementById('new-product-msg-' + ri).innerHTML =
       '<p class="success-new">✓ Product created: ' + productData.product.title + '</p>';
     btn.textContent = 'Created ✓';
@@ -785,9 +751,7 @@ window.createProduct = async function(ri) {
     btn.disabled = false; btn.textContent = 'Create product in Shopify';
   }
 };
-
 window.toggleRefine = function(ri) { document.getElementById('refine-' + ri).classList.toggle('open'); };
-
 window.doRefine = async function(ri) {
   const member = document.getElementById('refine-member-' + ri).value;
   const r = matchResults[ri];
@@ -801,7 +765,6 @@ window.doRefine = async function(ri) {
     renderResults();
   } catch(e) { btn.textContent = 'Error: ' + e.message; btn.disabled = false; }
 };
-
 window.updateNewStock = function(ri, val) { matchResults[ri].newStock = parseInt(val) || 0; };
 window.toggleSkip = function(ri) {
   matchResults[ri].skipped = !matchResults[ri].skipped;
@@ -815,10 +778,7 @@ window.selectAlt = function(ri, inventoryItemId, title, stock, img) {
   matchResults[ri].skipped = false;
   renderResults();
 };
-
-// Bijgehouden producten voor CSV export
 let savedProductsForCSV = [];
-
 async function saveAll() {
   const toSave = matchResults.filter(r => !r.skipped && r.selectedInventoryItemId);
   if (!toSave.length) { showToast('Nothing to save'); return; }
@@ -828,12 +788,9 @@ async function saveAll() {
   let saved = 0;
   for (const r of toSave) {
     try {
-      // EERST product ophalen voor delta berekening
       const productResp = await fetch(PROXY + '/shopify/products/' + r.best.shopify_product_id + '.json');
       const productData = await productResp.json();
       const oldStock = productData.product?.variants?.[0]?.inventory_quantity || 0;
-
-      // DAN inventory updaten
       const locResp = await fetch(PROXY + '/shopify/inventory_levels.json?inventory_item_ids=' + r.selectedInventoryItemId);
       const locData = await locResp.json();
       const locationId = locData.inventory_levels?.[0]?.location_id;
@@ -842,29 +799,20 @@ async function saveAll() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ location_id: locationId, inventory_item_id: r.selectedInventoryItemId, available: r.newStock })
       });
-
       if (productData.product) {
         const delta = r.newStock - oldStock;
         if (delta !== 0) savedProductsForCSV.push({ product: productData.product, newStock: r.newStock, delta });
       }
-
       saved++; btn.textContent = saved + ' of ' + toSave.length + ' saved...';
     } catch(e) { console.error(r.filename, e); }
   }
   showToast('✓ ' + saved + ' products updated in Shopify!');
   btn.disabled = false; btn.textContent = 'Save all to Shopify';
-
   if (savedProductsForCSV.length > 0) {
     document.getElementById('csvBtn').style.display = 'block';
   }
 }
-  // Toon CSV knop als er producten zijn opgeslagen
-  if (savedProductsForCSV.length > 0) {
-    document.getElementById('csvBtn').style.display = 'block';
-  }
-
 async function downloadBarcodeCSV() {
-  // Voeg ook nieuwe producten toe die deze sessie zijn aangemaakt
   const newProducts = matchResults.filter(r => r.createdProductId);
   for (const r of newProducts) {
     if (!savedProductsForCSV.find(p => p.product.id === r.createdProductId)) {
@@ -877,10 +825,7 @@ async function downloadBarcodeCSV() {
       } catch(e) {}
     }
   }
-
   if (!savedProductsForCSV.length) { showToast('Geen producten om te exporteren'); return; }
-
-  // Shopify CSV formaat — exacte kolomvolgorde
   const headers = [
     'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags','Published',
     'Option1 Name','Option1 Value','Variant SKU','Variant Grams','Variant Inventory Tracker',
@@ -892,7 +837,6 @@ async function downloadBarcodeCSV() {
     'Member (product.metafields.custom.member)',
     'Variant Weight Unit','Status'
   ];
-
   const rows = savedProductsForCSV.map(({ product, newStock, delta }) => {
     const variant = product.variants?.[0] || {};
     const image = product.images?.[0]?.src || '';
@@ -900,7 +844,6 @@ async function downloadBarcodeCSV() {
     const artist = product.metafields?.find?.(m => m.key === 'artist')?.value || '';
     const location = product.metafields?.find?.(m => m.key === 'location')?.value || '';
     const member = product.metafields?.find?.(m => m.key === 'member')?.value || '';
-
     return [
       product.handle,
       product.title,
@@ -932,10 +875,7 @@ async function downloadBarcodeCSV() {
       product.status || 'draft'
     ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
   });
-
   const csv = [headers.join(','), ...rows].join('\n');
-
-  // Stuur naar proxy en open als directe URL
   const resp = await fetch(PROXY + '/store-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -948,15 +888,12 @@ async function downloadBarcodeCSV() {
     showToast('Fout bij genereren CSV');
   }
 }
-
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 </script>
-
-<!-- Crop Modal -->
 <div class="crop-modal-overlay" id="cropModal" style="display:none">
   <div class="crop-modal">
     <h3>Bijsnijden</h3>
@@ -977,6 +914,5 @@ function showToast(msg) {
     </div>
   </div>
 </div>
-
 </body>
 </html>
